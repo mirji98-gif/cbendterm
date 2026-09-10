@@ -51,12 +51,16 @@ export function ProductArt({ shape, accent, className }: Props): JSX.Element {
         </svg>
       );
     case 'scarf':
+      // Deliberately avoids crossing diagonals: an outlined rectangle with an
+      // X through it is the universal "broken image" glyph, and on a mock
+      // storefront that reads as a site that failed to load.
       return (
         <svg {...common}>
-          <path d="M26 34h68v52H26z" fill={accent} fillOpacity="0.14" {...line} />
-          <path d="M26 34 60 60 94 34M26 86l34-26 34 26" {...line} />
-          <path d="M26 86v6M40 86v6M54 86v6M68 86v6M82 86v6M94 86v6" stroke={STROKE} strokeWidth="1.1" strokeLinecap="round" />
-          <circle cx="60" cy="60" r="6" fill={accent} fillOpacity="0.4" {...line} />
+          <path d="M28 30h50a8 8 0 0 1 8 8v44H36a8 8 0 0 1-8-8V30Z" fill={accent} fillOpacity="0.13" {...line} />
+          <path d="M40 24h50a8 8 0 0 1 8 8v44a8 8 0 0 1-8 8H40a8 8 0 0 1-8-8V32a8 8 0 0 1 8-8Z" fill={accent} fillOpacity="0.26" {...line} />
+          <path d="M40 84c14-10 30-22 58-40" stroke={STROKE} strokeWidth="0.9" strokeOpacity="0.45" />
+          <path d="M46 30h44M46 38h30" stroke={STROKE} strokeWidth="0.9" strokeOpacity="0.35" strokeLinecap="round" />
+          <path d="M40 84v8M50 84v8M60 84v8M70 84v8M80 84v8M90 84v8" stroke={STROKE} strokeWidth="1.2" strokeLinecap="round" />
         </svg>
       );
     case 'sunglasses':

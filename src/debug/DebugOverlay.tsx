@@ -1,6 +1,10 @@
 /**
  * Live event-log overlay. Inert without ?debug=1 — App.tsx renders it only
  * when the flag is set, and it has no effect on measurement.
+ *
+ * Anchored to the TOP of the viewport. Every screen's primary action is a
+ * bottom-sticky button, and a bottom-anchored overlay swallowed its taps —
+ * which made debug mode unusable on the very screens you most want to debug.
  */
 import { useState } from 'react';
 import { useSession } from '../machine/SessionContext';
@@ -12,12 +16,12 @@ export function DebugOverlay(): JSX.Element {
   const recent = session.eventLog.slice(-14).reverse();
 
   return (
-    <div className="fixed bottom-0 left-0 right-0 z-[100] pointer-events-none">
+    <div className="fixed top-0 left-0 right-0 z-[100] pointer-events-none">
       <div className="max-w-[560px] mx-auto p-2">
         <button
           type="button"
           onClick={() => setOpen((o) => !o)}
-          className="pointer-events-auto text-[10px] font-mono bg-black/85 text-lime-300 px-2 py-1 rounded"
+          className="pointer-events-auto text-[10px] font-mono bg-black/85 text-lime-300 px-2 py-1 rounded shadow"
         >
           {a ? `${a.arm}/${a.order}/${a.pairing} · slot ${a.slot} · ${a.source}` : 'unassigned'}
           {' · '}{session.step}{open ? ' ▾' : ' ▸'}

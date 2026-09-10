@@ -9,7 +9,7 @@
     "isolatedModules": true,
     "skipLibCheck": true,
     "noEmit": true,
-    "types": ["node"],
+    "types": ["node", "vite/client"],
     "allowImportingTsExtensions": true
   },
   "include": ["vite.config.ts", "vitest.config.ts", "scripts/**/*.ts"]

@@ -15,7 +15,8 @@
     "gen:appsscript": "tsx scripts/gen-apps-script.ts",
     "gen:codebook": "tsx scripts/gen-codebook.ts",
     "mock:server": "node scripts/mock-apps-script.mjs",
-    "roundtrip": "tsx scripts/roundtrip-test.ts"
+    "roundtrip": "tsx scripts/roundtrip-test.ts",
+    "e2e": "npm run build && node scripts/e2e-smoke.mjs"
   },
   "dependencies": {
     "react": "^18.3.1",
@@ -29,6 +30,7 @@
     "@vitejs/plugin-react": "^4.3.4",
     "autoprefixer": "^10.4.20",
     "jsdom": "^25.0.1",
+    "playwright": "^1.63.0",
     "postcss": "^8.4.49",
     "tailwindcss": "^3.4.17",
     "tsx": "^4.19.2",
