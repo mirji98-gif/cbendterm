@@ -77,9 +77,9 @@ const SESSION_COLUMNS: ColumnSpec[] = [
   { name: 'received_at', group: 'Timing', type: 'iso8601', description: 'Server-side receipt time, written by the Apps Script. Compare with submitted_at to detect device clock skew.' },
   { name: 'duration_s', group: 'Timing', type: 'float', description: 'Consent → submit, computed from performance.now() deltas rather than wall clock, so a device clock jump cannot corrupt it.' },
 
-  { name: 'device', group: 'Environment', type: 'string', description: 'User-agent string.' },
+  { name: 'device', group: 'Environment', type: 'string', description: 'Full user-agent string. Needed to interpret timing: PRD §11 notes mobile jank makes latency noisy, and device class is the first thing to check when it does.' },
   { name: 'viewport', group: 'Environment', type: 'string', description: 'CSS pixel viewport at start, "WxH".' },
-  { name: 'dpr', group: 'Environment', type: 'float', description: 'devicePixelRatio.' },
+  { name: 'dpr', group: 'Environment', type: 'float', description: 'devicePixelRatio at session start. Together with viewport it reconstructs the physical size the participant actually saw the pop-up at.' },
   { name: 'touch', group: 'Environment', type: 'bool', description: 'TRUE if the device reported touch support. Press-dwell is near-meaningless when TRUE (no hover on touch).' },
 
   { name: 'abandoned', group: 'Attrition', type: 'bool', description: 'TRUE when the row is a checkpoint that was never superseded by a completed submit. PRD §5.1 lists this per block; it is session-level here because per-block abandonment is not identifiable — a participant abandons a session, not a pop-up.' },
@@ -160,8 +160,8 @@ const END_COLUMNS: ColumnSpec[] = [
   { name: 'dp_awareness', group: 'Covariates', type: 'enum', values: ['yes', 'no', 'not_sure'], description: "Before today, had you come across the term 'dark patterns'?" },
   { name: 'shopping_freq', group: 'Covariates', type: 'enum', values: ['1', '2', '3', '4', '5'], description: 'How often do you shop online? 1 = rarely or never … 5 = several times a week.' },
 
-  { name: 'age_band', group: 'Demographics', type: 'enum', values: ['18_24', '25_34', '35_44', '45_plus', 'prefer_not'], description: 'Age band.' },
-  { name: 'gender', group: 'Demographics', type: 'enum', values: ['woman', 'man', 'non_binary', 'prefer_not'], description: 'Gender.' },
+  { name: 'age_band', group: 'Demographics', type: 'enum', values: ['18_24', '25_34', '35_44', '45_plus', 'prefer_not'], description: 'Self-reported age band. Collected as a band rather than a number so no participant is individually identifiable in a sample of 40.' },
+  { name: 'gender', group: 'Demographics', type: 'enum', values: ['woman', 'man', 'non_binary', 'prefer_not'], description: 'Self-reported gender, including a prefer-not-to-say option. Covariate only; the design is not powered to test gender differences at N=40.' },
   { name: 'occupation', group: 'Demographics', type: 'enum', values: ['student', 'working', 'both', 'other'], description: 'Student / working status.' },
 
   { name: 'event_log_json', group: 'Raw', type: 'json', description: 'Full ordered event log, every entry stamped with performance.now(). This is the audit trail: if a derived timing column looks wrong, the truth is in here.' },

@@ -1,0 +1,1 @@
+{"root":["./vite.config.ts","./vitest.config.ts","./scripts/fake-session.ts","./scripts/gen-apps-script.ts","./scripts/gen-sequence.ts","./scripts/roundtrip-test.ts"],"version":"5.9.3"}

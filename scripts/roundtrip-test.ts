@@ -94,7 +94,7 @@ async function main(): Promise<void> {
     console.log('\n2. Assignment endpoint');
     const assigns: { ok: boolean; slot: number; arm: string; order: string; pairing: string }[] = [];
     for (let i = 0; i < 3; i++) {
-      assigns.push(await (await get('action=assign')).json());
+      assigns.push((await (await get('action=assign')).json()) as (typeof assigns)[number]);
     }
     check('all three succeeded', assigns.every((a) => a.ok));
     check(

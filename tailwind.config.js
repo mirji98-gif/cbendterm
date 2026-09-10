@@ -10,6 +10,9 @@ export default {
         // 8px grid (PRD §6 visual direction)
         '18': '4.5rem',
       },
+      borderColor: {
+        'neutral-150': '#ececec',
+      },
     },
   },
   plugins: [],
