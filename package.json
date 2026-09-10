@@ -1,0 +1,39 @@
+{
+  "name": "confirmshaming-storefront-study",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc -b --noEmit false --emitDeclarationOnly false || tsc -p tsconfig.app.json --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "gen": "npm run gen:sequence && npm run gen:appsscript && npm run gen:codebook",
+    "gen:sequence": "tsx scripts/gen-sequence.ts",
+    "gen:appsscript": "tsx scripts/gen-apps-script.ts",
+    "gen:codebook": "tsx scripts/gen-codebook.ts",
+    "mock:server": "node scripts/mock-apps-script.mjs",
+    "roundtrip": "tsx scripts/roundtrip-test.ts"
+  },
+  "dependencies": {
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@testing-library/react": "^16.0.1",
+    "@types/node": "^22.20.2",
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "@vitejs/plugin-react": "^4.3.4",
+    "autoprefixer": "^10.4.20",
+    "jsdom": "^25.0.1",
+    "postcss": "^8.4.49",
+    "tailwindcss": "^3.4.17",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2",
+    "vite": "^6.0.5",
+    "vitest": "^2.1.8"
+  }
+}
