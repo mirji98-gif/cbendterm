@@ -1,0 +1,334 @@
+# Confirmshaming Study — Handover
+
+**CB End-Term · Group 2 · branch `claude/brave-heisenberg-m8zf3f`**
+
+A web app that runs a controlled psychology experiment: a mock storefront where a discount
+pop-up appears, and the only thing that changes between participants is the wording of the
+decline button. It logs how they respond, questions them, and debriefs them. This document is
+what exists, why it's built the way it is, and what's still open.
+
+| | |
+| --- | --- |
+| Target N | 40 (13 / 13 / 14 per arm) |
+| CSV columns | 145 (one row per person) |
+| Rated items | 72 (36 × two blocks) |
+| Checks green | 91 (23 unit · 26 API round-trip · 42 end-to-end) |
+| Bundle | 69 kB gzipped, no CDN calls |
+
+---
+
+## Start here: what we're actually measuring
+
+Every participant sees **two** storefronts, each with an identical discount pop-up. One pop-up
+always says a plain *"No thanks."* The other says one of three loaded variants, assigned
+between-subjects. Because each person supplies their own baseline, the primary outcome is a
+**within-person difference score** — experimental minus neutral — which strips out every stable
+individual difference. That's worth a lot at N = 40.
+
+These four strings are the entire manipulation:
+
+| Condition | Decline wording |
+| --- | --- |
+| baseline (neutral) | "No thanks" |
+| mild | "No thanks, I'll pay full price" |
+| strong | "No thanks, I don't need to save money" |
+| autonomy | "Not now — I'll decide later" |
+
+Headline, offer, accept label, close "X", button size, contrast, animation and timing are
+byte-identical across all four. **Mild and strong are predicted to do different things, not more
+of the same thing** — "I'll pay full price" targets a behaviour, "I don't need to save money"
+targets a standing attribute of the self. The theory says mild sits near the compliance peak and
+strong tips into anger and reactance.
+
+Behavioural measures — decision latency, cancelled taps, whether they used the button or the
+"X", dwell time — are the reason this is an app and not a Google Form. They don't exist in a
+survey.
+
+---
+
+## Where it stands
+
+| Area | State | Notes |
+| --- | --- | --- |
+| State machine & full participant flow | ✅ done | Consent → 2 shopping blocks → questionnaire → debrief |
+| Apps Script + Sheet round-trip | ✅ done | Proven against a local mock of the real `Code.gs` |
+| Storefront, product page, pop-up | ✅ done | Inline SVG products, no network images |
+| Questionnaire engine | ✅ done | JSON-driven, forced order, randomised within screen |
+| Recognition, open-ended, covariates | ✅ done | |
+| Admin view + CSV export | ✅ done | `?admin=1&key=…`, live cell counts |
+| Codebook + R analysis starter | ✅ done | Both generated from the item bank |
+| **Apps Script deployed to Google** | 🟠 open | **The one unverified link.** See "What's actually open." |
+| Real-phone QA on mobile data | 🟠 open | Tested in a Pixel 5 emulation only |
+| Two pilot runs | 🟠 open | PRD's definition of done |
+
+---
+
+## Running it in fifteen minutes
+
+Node 22 and npm. R only if you want to run the analysis.
+
+**1. Clone and install.**
+```bash
+git clone https://github.com/mirji98-gif/cbendterm
+cd cbendterm
+git checkout claude/brave-heisenberg-m8zf3f
+npm install
+```
+
+**2. Prove the data layer before anything else.** This loads the real generated Apps Script into
+a sandbox and asserts 26 things end to end — including that the exported CSV header is
+byte-identical to what the app serialises.
+```bash
+npm run roundtrip
+```
+
+**3. Run the app.** It works with no backend configured — assignment falls back to client-side
+random and submission fails gracefully into the rescue screen.
+```bash
+npm run dev        # http://localhost:5173
+npm test           # 23 unit tests
+npm run e2e        # full participant in a real browser
+```
+
+**4. Skip to a condition instead of clicking through.** The overlay shows the assignment,
+current step, and the last 14 timestamped events.
+```
+?debug=1&arm=strong&order=exp_first
+```
+
+**5. See the analysis before any data exists.** 40 simulated participants on the real assignment
+sequence, with a plausible effect built in. Build the slide templates off this.
+```bash
+Rscript analysis_starter.R analysis/synthetic_sample.csv
+```
+
+Full deployment walkthrough — Google Sheet, Apps Script, Vercel, recruiter links — is in
+`README.md`. Every column, scale and reverse-coding flag is in `codebook.md`.
+
+---
+
+## The five ideas holding it together
+
+If you understand these, the rest of the codebase follows. Each one exists because a specific
+thing could otherwise go wrong silently.
+
+### 1. One item bank, everything else generated
+
+Every questionnaire item lives in `src/data/items.ts` exactly once, with its scale, anchors,
+factor and `reverse` flag. The codebook, the 145 CSV columns, the Sheet header inside `Code.gs`
+and the reverse-coding vector the R script uses are **all generated from it**. A reverse flag
+cannot drift between the instrument that ran and the analysis that scores it — the drift is
+structurally impossible, not merely unlikely.
+
+> Edit `items.ts` → `npm run gen` → re-paste `Code.gs`
+
+### 2. The condition is one string, and nothing else can become one
+
+`Popup.tsx` reads its headline, subcopy and accept label from `POPUP_INVARIANT` constants rather
+than receiving them as props — so a per-condition override isn't expressible in the component's
+interface. Both buttons share a single class string, so tap target and contrast cannot diverge.
+They're both plain outlined buttons: a filled "accept" against an outlined "decline" is itself a
+dark pattern and would confound prominence with wording.
+
+> `src/data/conditions.ts` · `src/screens/Popup.tsx`
+
+### 3. One clock, zeroed on the painted frame
+
+`clock.ts` is the only module in the app that reads a timer. Everything uses
+`performance.now()`, which can't jump backwards when a phone syncs its clock. Latency is zeroed
+on the first *composited* frame via a double `requestAnimationFrame`, not on mount — measuring at
+mount attributes zero cost to rendering and would bias every latency in the study downward.
+
+> `src/instrumentation/clock.ts`
+
+### 4. Checkpoint rows, upserted by participant id
+
+A closed tab sends nothing. So the app posts a partial row after consent and after each block,
+keyed by participant id, and the final submit overwrites it. Without this, `abandoned` would
+read `FALSE` for 100% of the data — you'd have no attrition number at all, and no partial data
+from anyone who dropped at block two.
+
+> `SessionContext.tsx` checkpoints · `Code.gs` `upsert_()`
+
+### 5. One transition table, no router
+
+`session.step` is the only source of truth for what's on screen, and no component computes its
+own successor. That's what makes the forced questionnaire order a structural property rather
+than a convention — to ask emotions after a manipulation item you'd have to edit the table, not
+merely make a mistake in a component.
+
+> `src/machine/steps.ts`
+
+---
+
+## The tests are the spec
+
+Four requirements are experimental-validity constraints, not preferences. Each is enforced by a
+test, so breaking one fails the build rather than quietly corrupting the study.
+
+| Requirement | Enforced by |
+| --- | --- |
+| The decline wording is the *only* difference between conditions | `Popup.identical.test.tsx` |
+| Emotions measured before any manipulation/intent item; no back navigation | `machine/steps.test.ts` |
+| Every event stamped from one clock | `instrumentation/clock.test.ts` |
+| No progress bar or study cue during the shopping steps | `machine/steps.test.ts` |
+
+**If one of these fails, do not update it to pass.** It's telling you the manipulation has been
+confounded, and there is no statistical fix for that after collection. The identical-pop-up test
+was deliberately broken during development to confirm it isn't vacuous — adding a slightly
+smaller font to just the strong condition made it fail and name that condition.
+
+The clock test works by stripping comments and string literals from every source file, then
+grepping for `Date.now` and `performance.now` outside `clock.ts`. If you add a timer somewhere,
+that's what will catch you.
+
+---
+
+## The counterbalancing, and why 13 is awkward
+
+Assignment isn't random. A pre-generated, seeded sequence is served one slot at a time by the
+Apps Script under a script lock, which is what guarantees exactly 13/13/14 rather than
+approximately 13/13/14. Two people tapping "I agree" in the same second would otherwise read the
+same counter and get the same slot.
+
+Order (neutral-first vs experimental-first) and brand pairing are crossed, giving four cells per
+arm. But 13 isn't divisible by 4, so per-arm cells *can't* all be equal. The extras are placed so
+the marginal totals come out exactly balanced — the best achievable allocation:
+
+| Arm | neu·aurevella | neu·veloure | exp·aurevella | exp·veloure | n |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| mild | 4 | 3 | 3 | 3 | 13 |
+| strong | 3 | 4 | 3 | 3 | 13 |
+| autonomy | 3 | 3 | 4 | 4 | 14 |
+| **marginal** | **10** | **10** | **10** | **10** | **40** |
+
+The sequence is shuffled with a fixed seed, so arm isn't confounded with recruitment date —
+unshuffled, everyone recruited on day one would be in the same arm. There are 52 slots: 40 for
+the design and 12 as insurance, because **a participant who consents and then drops burns a slot
+permanently**. The admin view shows assigned vs completed per cell so you can spot the gap while
+there's still time to fix it.
+
+This residual imbalance is printed in the codebook. Report it as a design fact — it isn't an
+accident of randomisation.
+
+---
+
+## Decisions already argued out
+
+These deviate from the PRD deliberately. Each is listed with its reasoning in `codebook.md` §9
+so the write-up can state it rather than discover it. Please don't quietly revert them.
+
+| PRD said | Built as | Because |
+| --- | --- | --- |
+| `mode:'no-cors'` POST | CORS-simple `text/plain` POST | An opaque response resolves successfully even on a 500, so the retry-and-rescue logic the PRD also asks for could never have fired |
+| `*_abandoned` per block | Session-level, plus `abandoned_at_step` | People abandon a session, not a pop-up |
+| `cancelled_taps` includes `pointercancel` | Two separate columns | On Android `pointercancel` fires on every scroll; merged, the column would mostly measure scrolling |
+| Continuation "6s or until action" | Live at 0s, auto-advance at 8s, censoring flagged | Ambiguous between a floor and a ceiling, which give different dwell distributions |
+| `abandon` code, no threshold | `timeout` at 45s | Without a timeout a frozen participant loses the entire row |
+| IMI item 6 unmarked | `reverse: true` | "Fair" at the high anchor runs opposite to the scale; unreversed it deflates alpha and biases the mean |
+| ~6 minutes | Consent states 8–10 | 72 rated items plus storefront and end matter doesn't fit in 6 on a phone |
+
+---
+
+## Where the bodies are buried
+
+Things that will bite you, in rough order of how much damage they'd do.
+
+> **Redeploying the Apps Script is a trap.** To update the live script use *Deploy → Manage
+> deployments → edit → New version*. Creating a *new deployment* instead gives you a **different
+> URL**, which is the most common way to end up with data quietly landing somewhere nobody is
+> looking.
+
+- **Four files are generated — don't hand-edit them.** `apps-script/Code.gs`,
+  `src/data/sequence.ts`, `codebook.md`, `analysis/generated_scales.R`. Change the source and run
+  `npm run gen`. If you change columns, you must re-paste `Code.gs` and deploy a new version.
+- **Run `resetAssignmentCursor()` before real collection.** From the Apps Script editor's
+  function dropdown, along with `deleteDebugRows()`. Otherwise the first real participant gets
+  slot 6 and the balance is off from the start.
+- **Debug sessions write real rows**, tagged `is_debug=TRUE`, through the ordinary code path —
+  deliberately, because the alternative is testing a path you don't ship. They're excluded from
+  every admin count. Filter on that column, or run the cleanup function.
+- **Cancelled taps use `elementFromPoint`, not the event target.** Touch pointers get implicit
+  capture, so a finger sliding off a button still fires `pointerup` on that button. Checking
+  `e.target` would report zero cancelled taps on every phone in the sample. Don't "simplify"
+  this.
+- **A mid-session reload nulls that block's timing on purpose.** Re-showing an answered pop-up
+  would produce a clean-looking, entirely meaningless latency. A flagged null beats a plausible
+  lie — the row carries `resumed_after_reload=TRUE`.
+- **Press-dwell will be a noisy near-constant on touch.** There's no hover, and tap duration is
+  reflex rather than deliberation. `latency_ms` and `time_to_first_touch_ms` are the variables
+  that carry the argument. Worth a line in the limitations slide.
+- **If piloting runs long,** set `CUT_TIER` in `src/data/config.ts` and re-run `npm run gen`.
+  Every item carries a cut tier following the PRD's order — credibility first, then the
+  happy/amused factor, then switching intention. IMI and the anger factor are never cut.
+
+---
+
+## What's actually open
+
+Good places to pick up, roughly in the order they block progress.
+
+> **Deploy and verify the Apps Script — this is the critical one.** The round-trip is proven
+> against a faithful local sandbox running the real `Code.gs`, but *not* against Google's actual
+> servers. The `text/plain` CORS-simple POST is a well-established Apps Script pattern, but it
+> hasn't been confirmed on a live deployment. Follow the README, then open
+> `<EXEC_URL>?action=ping` — it should return `{"ok":true,"columns":145,"slots":52}`. If it
+> doesn't, `?action=verify&pid=` is already wired as a fallback path.
+
+- **Real-device QA.** One full run on an actual Android phone on mobile data, not desktop, not
+  an emulator. Watch for anything that inflates `popup_render_gap_ms` past the 2-second exclusion
+  threshold.
+- **Two pilot runs** with people outside the group. The PRD's definition of done: they finish
+  without asking a single question, both rows land with non-null timing, and the CSV opens
+  cleanly.
+- **Decide the cut tier** from what the pilots actually take, and lower `STATED_DURATION` in
+  `src/data/copy.ts` to match.
+- **Two unresolved study-design calls.** The brand names aren't matched — "Aurevella" vs "Maison
+  Veloure" differ in length, syllables and how luxury-coded they read. Counterbalancing removes
+  the bias but not the variance, and that variance lands on the primary outcome. And the category
+  was narrowed to fragrance and small accessories, no apparel, because appearance-domain stimuli
+  induce self-conscious emotion at baseline — the very thing the manipulation is meant to move.
+  Both are Adi's calls, both are cheap to change before recruiting and impossible after.
+
+---
+
+## Map of the repo
+
+*Italic paths are generated — don't edit them by hand.*
+
+```
+PRD_confirmshaming_experiment_app.md   the original spec
+README.md                              deployment, debug mode, recruiter links, checklist
+codebook.md                            GENERATED — every column, scale, reverse flag, deviation
+analysis_starter.R                     scoring, alphas, difference scores, effect sizes
+apps-script/Code.gs                    GENERATED — paste this into the Apps Script editor
+
+src/data/
+  items.ts                             ← THE ITEM BANK. Start here.
+  columns.ts                           the 145-column CSV contract
+  conditions.ts                        the four wordings, and nothing else per-condition
+  sequence.ts                          GENERATED — the balanced 52-slot assignment sequence
+  brands.ts copy.ts config.ts
+
+src/machine/                           steps, reducer, persistence, session provider
+src/instrumentation/                   clock.ts (the only timer) · popupTelemetry.ts
+src/net/                               api.ts transport · serialize.ts row builder
+src/screens/                           one component per step
+
+scripts/
+  gen-*.ts                             the generators behind npm run gen
+  mock-apps-script.mjs                 runs the real Code.gs locally under stubs
+  roundtrip-test.ts                    26 assertions on the data layer
+  e2e-smoke.mjs                        42 assertions, real browser, real row
+  make-synthetic-csv.ts                the dry-run dataset
+
+analysis/
+  generated_scales.R                   GENERATED — scale defs + reverse vector for R
+  synthetic_sample.csv                 GENERATED — 40 simulated participants
+```
+
+---
+
+Four commits on `claude/brave-heisenberg-m8zf3f`. Roughly 6,100 lines of TypeScript across the
+app, generators and test harnesses. Read `README.md` for deployment and `codebook.md` before
+touching the instrument.
