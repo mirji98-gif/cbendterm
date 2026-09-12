@@ -89,7 +89,7 @@ describe('"easy to get wrong" #2 — brand trust is level-framed', () => {
 
 describe('nothing hints at a study before the debrief', () => {
   const ALL_STEPS: Step[] = [
-    'consent', 'assigning', 'instructions',
+    'consent', 'instructions',
     'store_1', 'product_1', 'popup_1', 'continuation_1', 'block_1',
     'store_2', 'product_2', 'popup_2', 'continuation_2', 'block_2',
     'awareness', 'comparative', 'covariates', 'demographics',

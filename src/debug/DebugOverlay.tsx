@@ -23,7 +23,7 @@ export function DebugOverlay(): JSX.Element {
           onClick={() => setOpen((o) => !o)}
           className="pointer-events-auto text-[10px] font-mono bg-black/85 text-lime-300 px-2 py-1 rounded shadow"
         >
-          {a ? `${a.arm}/${a.order}/${a.pairing} · slot ${a.slot} · ${a.source}` : 'unassigned'}
+          {a ? `${a.arm}/${a.order}/${a.pairing} · r${session.recruiterId || '—'} · ${a.source}` : 'unassigned'}
           {' · '}{session.step}{open ? ' ▾' : ' ▸'}
         </button>
         {open && (

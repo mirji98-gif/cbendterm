@@ -177,7 +177,6 @@ export function serializeSession(session: Session, opts: SerializeOptions): Row 
     app_version: session.meta.appVersion,
 
     assignment_source: a ? a.source : '',
-    slot: a ? a.slot : '',
     arm: a ? a.arm : '',
     order: a ? a.order : '',
     pairing: a ? a.pairing : '',

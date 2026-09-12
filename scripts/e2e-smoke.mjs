@@ -96,7 +96,10 @@ async function main() {
     console.log('\n\x1b[1mEnd-to-end participant run\x1b[0m (real build, real Code.gs, Pixel 5)\n');
 
     console.log('1. Consent and assignment');
-    await page.goto(`http://localhost:${APP_PORT}/?r=3`, { waitUntil: 'networkidle' });
+    // t5ya -> recruiter 3, arm 'strong' (src/data/groupCodes.ts). Real link
+    // format post change_spec_group_codes.md; also makes the arm deterministic
+    // for this run instead of whatever a random draw produced.
+    await page.goto(`http://localhost:${APP_PORT}/?g=t5ya`, { waitUntil: 'networkidle' });
     check('no progress bar on the consent screen', (await page.locator('.bg-neutral-200.h-1').count()) === 0);
     await page.getByRole('button', { name: /I agree/i }).click();
     await page.getByRole('button', { name: /Start browsing/i }).waitFor({ timeout: 10000 });
@@ -227,9 +230,10 @@ async function main() {
 
     check('exactly one row (checkpoints upserted, not duplicated)', lines.length - 1 === 1, `${lines.length - 1} rows`);
     check('status is complete', get('status') === 'complete');
-    check('recruiter_id captured from ?r=3', get('recruiter_id') === '3');
-    check('assignment came from the server', get('assignment_source') === 'server');
-    check('arm recorded', ['mild', 'strong', 'autonomy'].includes(get('arm')));
+    check('no slot column in the header (removed with the assign endpoint)', header.indexOf('slot') === -1);
+    check("recruiter_id decoded from ?g=t5ya (recruiter 3)", get('recruiter_id') === '3');
+    check("assignment_source is 'group_code'", get('assignment_source') === 'group_code');
+    check("arm is 'strong', deterministically from the code (not random)", get('arm') === 'strong');
 
     for (const p of ['neutral', 'exp']) {
       const latency = Number(get(`${p}_latency_ms`));

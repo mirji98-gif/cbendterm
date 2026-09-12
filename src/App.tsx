@@ -12,7 +12,6 @@ import { ProgressBar } from './components/ProgressBar';
 import { DebugOverlay } from './debug/DebugOverlay';
 
 import { Consent } from './screens/Consent';
-import { Assigning } from './screens/Assigning';
 import { Instructions } from './screens/Instructions';
 import { Storefront } from './screens/Storefront';
 import { ProductPage } from './screens/ProductPage';
@@ -33,8 +32,6 @@ function CurrentScreen(): JSX.Element {
   switch (step) {
     case 'consent':
       return <Consent />;
-    case 'assigning':
-      return <Assigning />;
     case 'instructions':
       return <Instructions />;
 

@@ -7,12 +7,15 @@ import type { RatedItemId, DownstreamChoice } from '../data/items';
 import type { AwarenessAnswer } from '../data/awareness';
 import type { ComparativeRaw } from '../data/comparative';
 
-export type AssignmentSource = 'server' | 'fallback' | 'debug';
+/**
+ * 'group_code' = arm and recruiter decoded from ?g=. 'random' = the code was
+ * missing or unrecognised, so the client picked an arm uniformly at random
+ * and there is no recruiter to attribute. 'debug' = forced via ?debug=1.
+ */
+export type AssignmentSource = 'group_code' | 'random' | 'debug';
 
 export interface Assignment {
   source: AssignmentSource;
-  /** Index into the pre-generated sequence; -1 for fallback/debug. */
-  slot: number;
   arm: Arm;
   order: BlockOrder;
   pairing: BrandPairing;
@@ -108,7 +111,6 @@ export interface SessionMeta {
 
 export type Step =
   | 'consent'
-  | 'assigning'
   | 'instructions'
   | 'store_1'
   | 'product_1'

@@ -7,18 +7,24 @@ pop-up appears, and the only thing that changes between participants is the word
 decline button. It logs how they respond, questions them, and debriefs them. This document is
 what exists, why it's built the way it is, and what's still open.
 
-**The questionnaire is on its second version.** [`Instrument_v2.md`](Instrument_v2.md) replaces
-the original 36-items-per-block battery with five single-item measures per pop-up, traded for
-completion at N = 40 on phones. Everything else — design, storefront, pop-up, event logging, data
-layer — is unaffected. If you're reading `PRD_confirmshaming_experiment_app.md` too, its §4 and §5
-are superseded; the rest of it still stands.
+**Two things have changed since this app was first built**, each with its own spec doc, and each a
+patch rather than a rebuild:
+
+- [`Instrument_v2.md`](Instrument_v2.md) replaces the original 36-items-per-block battery with five
+  single-item measures per pop-up, traded for completion on phones. Supersedes PRD §4-5.
+- [`change_spec_group_codes.md`](change_spec_group_codes.md) replaces the app's own server-generated
+  assignment sequence with an opaque code in each recruiting link: the link now determines the
+  arm *and* the recruiter in one step. Supersedes PRD §7's assign endpoint.
+
+Everything else — storefront, pop-up, event logging, debrief — is unaffected by either. If you're
+reading `PRD_confirmshaming_experiment_app.md` too, treat those sections as historical.
 
 | | |
 | --- | --- |
-| Target N | 40 (13 / 13 / 14 per arm) |
-| CSV columns | 100 (one row per person) |
+| Target N | 45 (15 / 15 / 15 per arm) — see the counterbalancing section for a wrinkle |
+| CSV columns | 99 (one row per person) |
 | Rated items | 8 (4 × two blocks), plus a downstream choice, awareness and a comparative block |
-| Checks green | 121 (40 unit · 26 API round-trip · 55 end-to-end) |
+| Checks green | 92 (53 unit · 29 API round-trip · 56 end-to-end) |
 | Bundle | 69 kB gzipped, no CDN calls |
 
 ---
@@ -29,7 +35,7 @@ Every participant sees **two** storefronts, each with an identical discount pop-
 always says a plain *"No thanks."* The other says one of three loaded variants, assigned
 between-subjects. Because each person supplies their own baseline, the primary outcome is a
 **within-person difference score** — experimental minus neutral — which strips out every stable
-individual difference. That's worth a lot at N = 40.
+individual difference. That's worth a lot at a sample this size.
 
 These four strings are the entire manipulation:
 
@@ -63,6 +69,7 @@ survey.
 | Awareness check (screen 10) | ✅ done | Asked once per brand, after both blocks, never quotes a literal decline wording |
 | Comparative block (screen 11) | ✅ done | Raw + recoded relative to the experimental brand |
 | Admin view + CSV export | ✅ done | `?admin=1&key=…`, live cell counts |
+| Group-code assignment | ✅ done | Arm + recruiter decoded from `?g=` at consent; see `change_spec_group_codes.md` |
 | Codebook + R analysis starter | ✅ done | Both generated from the item bank / awareness / comparative modules |
 | **Apps Script deployed to Google** | 🟠 open | **The one unverified link.** See "What's actually open." |
 | Real-phone QA on mobile data | 🟠 open | Tested in a Pixel 5 emulation only |
@@ -83,38 +90,40 @@ npm install
 ```
 
 **2. Prove the data layer before anything else.** This loads the real generated Apps Script into
-a sandbox and asserts 26 things end to end — including that the exported CSV header is
+a sandbox and asserts 29 things end to end — including that the exported CSV header is
 byte-identical to what the app serialises.
 ```bash
 npm run roundtrip
 ```
 
-**3. Run the app.** It works with no backend configured — assignment falls back to client-side
-random and submission fails gracefully into the rescue screen.
+**3. Run the app.** It works with no backend configured — arm comes from `?g=<code>` if present,
+otherwise a genuine per-participant random draw, and submission fails gracefully into the rescue
+screen.
 ```bash
 npm run dev        # http://localhost:5173
-npm test           # 40 unit tests
+npm test           # 53 unit tests
 npm run e2e        # full participant in a real browser
 ```
 
 **4. Skip to a condition instead of clicking through.** The overlay shows the assignment,
-current step, and the last 14 timestamped events.
+recruiter, current step, and the last 14 timestamped events.
 ```
 ?debug=1&arm=strong&order=exp_first
 ```
 
-**5. See the analysis before any data exists.** 40 simulated participants on the real assignment
-sequence, with a plausible effect built in. Build the slide templates off this.
+**5. See the analysis before any data exists.** 45 simulated participants drawn via the real
+`GROUP_CODES` table, with a plausible effect built in. Build the slide templates off this.
 ```bash
 Rscript analysis_starter.R analysis/synthetic_sample.csv
 ```
 
 Full deployment walkthrough — Google Sheet, Apps Script, Vercel, recruiter links — is in
-`README.md`. Every column, scale and recoding rule is in `codebook.md`.
+`README.md`, including the full list of twelve `?g=` links and their code-to-arm mapping. Every
+column, scale and recoding rule is in `codebook.md`.
 
 ---
 
-## The six ideas holding it together
+## The seven ideas holding it together
 
 If you understand these, the rest of the codebase follows. Each one exists because a specific
 thing could otherwise go wrong silently.
@@ -123,7 +132,7 @@ thing could otherwise go wrong silently.
 
 The instrument lives in three files: `src/data/items.ts` (the four rated items and the downstream
 choice), `src/data/awareness.ts` (the awareness check), and `src/data/comparative.ts` (the
-comparative block, including the brand-relative recoding functions). The codebook, the 100 CSV
+comparative block, including the brand-relative recoding functions). The codebook, the 99 CSV
 columns, and the Sheet header inside `Code.gs` are **all generated from these three**. A recoding
 rule cannot drift between the instrument that ran and the analysis that scores it — the drift is
 structurally impossible, not merely unlikely.
@@ -180,6 +189,18 @@ asserts the recoded meaning stays fixed to condition while its relationship to p
 
 > `src/data/comparative.ts` · `src/net/serialize.ts` (where the recode is actually applied)
 
+### 7. The link decides the arm, the app never guesses one
+
+Arm and recruiter are decoded from an opaque `?g=` code at the consent screen — `GROUP_CODES` in
+`src/data/groupCodes.ts` is the only place that mapping lives (besides README.md, which stays
+out of participants' hands). A missing or mistyped code doesn't fall through to any fixed arm —
+it draws a genuine random one client-side and records `assignment_source='random'` with an empty
+recruiter, so a bad link degrades gracefully instead of silently biasing the sample toward one
+condition. The raw code itself is never shown in the UI or written to the Sheet — only the
+decoded arm and `recruiter_id` are logged.
+
+> `src/data/groupCodes.ts` · `src/machine/SessionContext.tsx` (`resolveAssignment`)
+
 ---
 
 ## The tests are the spec
@@ -197,6 +218,9 @@ three things `Instrument_v2.md` itself calls out as "easy to get wrong."
 | Awareness asked once per brand, only after both blocks; never quotes a literal decline wording | `machine/steps.test.ts` |
 | Brand-trust item is level-framed, not change-framed | `machine/steps.test.ts` |
 | Comparative recoding is relative to condition, not presentation position | `data/comparative.test.ts` |
+| A valid group code decodes to its exact arm + recruiter | `data/groupCodes.test.ts` |
+| A missing/unrecognised code never falls back to a fixed arm | `data/groupCodes.test.ts` |
+| Group codes are matched case-insensitively, whitespace trimmed | `data/groupCodes.test.ts` |
 
 **If one of these fails, do not update it to pass.** It's telling you the manipulation has been
 confounded, and there is no statistical fix for that after collection. The identical-pop-up test
@@ -209,32 +233,30 @@ that's what will catch you.
 
 ---
 
-## The counterbalancing, and why 13 is awkward
+## The counterbalancing, and why 15 doesn't divide by 4 either
 
-Assignment isn't random. A pre-generated, seeded sequence is served one slot at a time by the
-Apps Script under a script lock, which is what guarantees exactly 13/13/14 rather than
-approximately 13/13/14. Two people tapping "I agree" in the same second would otherwise read the
-same counter and get the same slot.
+> **Superseded mechanism, kept for history.** Until `change_spec_group_codes.md`, arm came from a
+> pre-generated, seeded sequence served one slot at a time by the Apps Script under a script
+> lock — that's why the target was 13/13/14 rather than 15/15/15, and why the repo still has a
+> vestigial `sequence.ts` and `?action=assign` endpoint. Neither is live any more; the paragraphs
+> below describe the mechanism that actually runs today.
 
-Order (neutral-first vs experimental-first) and brand pairing are crossed, giving four cells per
-arm. But 13 isn't divisible by 4, so per-arm cells *can't* all be equal. The extras are placed so
-the marginal totals come out exactly balanced — the best achievable allocation:
+Arm is decoded from the recruiting link's group code (`?g=<code>`, `src/data/groupCodes.ts`), not
+assigned by the app. Twelve codes exist — one per recruiter × arm — so each of the four
+recruiters hands out links for all three arms rather than flooding one arm with their own social
+circle. Order (neutral-first vs experimental-first) and brand pairing are **not** counterbalanced
+by a sequence any more: each is drawn with a plain `Math.random()` per participant, because
+exact per-cell balance on these nuisance factors was judged not worth reintroducing server-side
+state for. A participant who consents and then drops doesn't burn a reserved slot — there's
+nothing to reserve — so no insurance-slot bookkeeping is needed either.
 
-| Arm | neu·aurevella | neu·veloure | exp·aurevella | exp·veloure | n |
-| --- | ---: | ---: | ---: | ---: | ---: |
-| mild | 4 | 3 | 3 | 3 | 13 |
-| strong | 3 | 4 | 3 | 3 | 13 |
-| autonomy | 3 | 3 | 4 | 4 | 14 |
-| **marginal** | **10** | **10** | **10** | **10** | **40** |
-
-The sequence is shuffled with a fixed seed, so arm isn't confounded with recruitment date —
-unshuffled, everyone recruited on day one would be in the same arm. There are 52 slots: 40 for
-the design and 12 as insurance, because **a participant who consents and then drops burns a slot
-permanently**. The admin view shows assigned vs completed per cell so you can spot the gap while
-there's still time to fix it.
-
-This residual imbalance is printed in the codebook. Report it as a design fact — it isn't an
-accident of randomisation.
+The target N is 45 (15/15/15 per arm), one recruiter short of dividing evenly: with 4 recruiters
+per arm, one recruiter per arm has to hand out one fewer link than the other three (e.g. 4/4/4/3).
+`ARM_TARGETS` in `src/data/conditions.ts` was **not** updated for this change — it still reads
+13/13/14, the old design's target — since the spec never asked for that constant to move.
+Treat the admin view's per-arm progress bars as stale until someone updates it; the true target is
+15/15/15, and `analysis_starter.R`'s arm × recruiter table is the place to actually check the
+mix as data comes in.
 
 ---
 
@@ -254,6 +276,7 @@ quietly revert them.
 | Continuation "6s or until action" | Live at 0s, auto-advance at 8s, censoring flagged | Ambiguous between a floor and a ceiling, which give different dwell distributions |
 | `abandon` code, no threshold | `timeout` at 45s | Without a timeout a frozen participant loses the entire row |
 | ~6 minutes (v1: stated 8–10 due to item load) | Consent states ~6 minutes again | v2's much shorter instrument (~23 items vs ~80) makes the original estimate realistic |
+| Arm assigned by the app (pre-generated sequence via `?action=assign`) | Arm decoded from the link's `?g=` group code; order/pairing drawn per participant | `change_spec_group_codes.md`: a clean 15/15/15 split needs each arm drawing from all four recruiters' social circles, which only link-based control achieves |
 
 ---
 
@@ -269,9 +292,11 @@ Things that will bite you, in rough order of how much damage they'd do.
 - **Four files are generated — don't hand-edit them.** `apps-script/Code.gs`,
   `src/data/sequence.ts`, `codebook.md`, `analysis/generated_scales.R`. Change the source and run
   `npm run gen`. If you change columns, you must re-paste `Code.gs` and deploy a new version.
-- **Run `resetAssignmentCursor()` before real collection.** From the Apps Script editor's
-  function dropdown, along with `deleteDebugRows()`. Otherwise the first real participant gets
-  slot 6 and the balance is off from the start.
+  `sequence.ts` (and the `assign`/`resetAssignmentCursor` machinery in `Code.gs`) is now
+  vestigial — still generated and still tested, but nothing in the live app reads it.
+- **`resetAssignmentCursor()` has nothing left to reset.** It was needed before real collection
+  under the old sequence-based mechanism; under group codes there's no cursor, so skip it. Still
+  run `deleteDebugRows()` before real collection.
 - **Debug sessions write real rows**, tagged `is_debug=TRUE`, through the ordinary code path —
   deliberately, because the alternative is testing a path you don't ship. They're excluded from
   every admin count. Filter on that column, or run the cleanup function.
@@ -303,8 +328,9 @@ Good places to pick up, roughly in the order they block progress.
 > against a faithful local sandbox running the real `Code.gs`, but *not* against Google's actual
 > servers. The `text/plain` CORS-simple POST is a well-established Apps Script pattern, but it
 > hasn't been confirmed on a live deployment. Follow the README, then open
-> `<EXEC_URL>?action=ping` — it should return `{"ok":true,"columns":100,"slots":52}`. If it
-> doesn't, `?action=verify&pid=` is already wired as a fallback path.
+> `<EXEC_URL>?action=ping` — it should return `{"ok":true,"columns":99,"slots":52}` (`slots` is
+> vestigial — see "The counterbalancing" above). If it doesn't, `?action=verify&pid=` is already
+> wired as a fallback path.
 
 - **Real-device QA.** One full run on an actual Android phone on mobile data, not desktop, not
   an emulator. Watch for anything that inflates `popup_render_gap_ms` past the 2-second exclusion
@@ -320,6 +346,13 @@ Good places to pick up, roughly in the order they block progress.
   was narrowed to fragrance and small accessories, no apparel, because appearance-domain stimuli
   induce self-conscious emotion at baseline — the very thing the manipulation is meant to move.
   Both are Adi's calls, both are cheap to change before recruiting and impossible after.
+- **`ARM_TARGETS` still reads 13/13/14, not 15/15/15.** Deliberately left as-is — the group-code
+  spec never asked for it to move — but it means the admin view's progress bars target the old
+  N=40 design. Cosmetic only; doesn't affect assignment. Fix it if the admin view starts being
+  used to judge whether recruiting is on track.
+- **No live count of `random`-fallback or arm × recruiter mix in the admin view.** Adding one
+  would mean changing `Code.gs`'s stats endpoint, which the group-code spec explicitly says is
+  out of scope. Until then, use Download CSV + `analysis_starter.R`, which already reports both.
 
 ---
 
@@ -339,9 +372,10 @@ src/data/
   items.ts                             ← THE RATED ITEMS + downstream choice. Start here.
   awareness.ts                         the awareness check (screen 10)
   comparative.ts                       the comparative block + brand-relative recoding (screen 11)
-  columns.ts                           the 100-column CSV contract
+  groupCodes.ts                        the ?g= code → {recruiter, arm} table. Never ship this to participants.
+  columns.ts                           the 99-column CSV contract
   conditions.ts                        the four wordings, and nothing else per-condition
-  sequence.ts                          GENERATED — the balanced 52-slot assignment sequence
+  sequence.ts                          GENERATED, VESTIGIAL — the old 52-slot assignment sequence, unused
   brands.ts copy.ts config.ts
 
 src/machine/                           steps, reducer, persistence, session provider
@@ -352,17 +386,17 @@ src/screens/                           one component per step
 scripts/
   gen-*.ts                             the generators behind npm run gen
   mock-apps-script.mjs                 runs the real Code.gs locally under stubs
-  roundtrip-test.ts                    26 assertions on the data layer
-  e2e-smoke.mjs                        55 assertions, real browser, real row
+  roundtrip-test.ts                    29 assertions on the data layer
+  e2e-smoke.mjs                        56 assertions, real browser, real row
   make-synthetic-csv.ts                the dry-run dataset
 
 analysis/
   generated_scales.R                   GENERATED — rated-item text + ordinal mapping for R
-  synthetic_sample.csv                 GENERATED — 40 simulated participants
+  synthetic_sample.csv                 GENERATED — 45 simulated participants
 ```
 
 ---
 
-Five commits on `claude/brave-heisenberg-m8zf3f`. Roughly 6,500 lines of TypeScript across the
+Six commits on `claude/brave-heisenberg-m8zf3f`. Roughly 6,700 lines of TypeScript across the
 app, generators and test harnesses. Read `README.md` for deployment and `codebook.md` before
 touching the instrument.

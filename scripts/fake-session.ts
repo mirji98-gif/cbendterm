@@ -7,6 +7,7 @@ import { DECLINE_COPY, type Arm, type BlockOrder, type BrandPairing } from '../s
 import {
   blockAtPosition,
   brandForBlock,
+  type AssignmentSource,
   type BlockData,
   type BlockKey,
   type Session,
@@ -65,19 +66,22 @@ export function fakeSession(opts: {
   arm: Arm;
   order: BlockOrder;
   pairing: BrandPairing;
-  slot: number;
   complete: boolean;
   isDebug?: boolean;
+  /** Defaults to 'group_code' with recruiterId '2', matching a real link. */
+  assignmentSource?: AssignmentSource;
+  recruiterId?: string;
 }): Session {
-  const { participantId, arm, order, pairing, slot, complete } = opts;
+  const { participantId, arm, order, pairing, complete } = opts;
+  const source = opts.assignmentSource ?? 'group_code';
   const now = new Date().toISOString();
   return {
-    schema: 2,
+    schema: 3,
     step: complete ? 'debrief' : 'block_1',
     participantId,
-    recruiterId: '2',
+    recruiterId: opts.recruiterId ?? (source === 'group_code' ? '2' : ''),
     isDebug: opts.isDebug ?? false,
-    assignment: { source: 'server', slot, arm, order, pairing },
+    assignment: { source, arm, order, pairing },
     blocks: {
       neutral: fakeBlock('neutral', arm, order, pairing, complete),
       exp: fakeBlock('exp', arm, order, pairing, complete),

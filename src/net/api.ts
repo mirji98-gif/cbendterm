@@ -11,25 +11,7 @@
  * `?action=verify` is the belt-and-braces check if a response is ever opaque.
  */
 import { ENDPOINT_URL, SUBMIT } from '../data/config';
-import {
-  ARMS,
-  BLOCK_ORDERS,
-  BRAND_PAIRINGS,
-  type Arm,
-  type BlockOrder,
-  type BrandPairing,
-} from '../data/conditions';
-import type { Assignment } from '../machine/types';
 import type { Row } from './serialize';
-
-export interface AssignResponse {
-  ok: boolean;
-  slot?: number;
-  arm?: Arm;
-  order?: BlockOrder;
-  pairing?: BrandPairing;
-  error?: string;
-}
 
 export interface PostResponse {
   ok: boolean;
@@ -47,59 +29,13 @@ export function isConfigured(): boolean {
   return endpoint().length > 0;
 }
 
-/** Uniform pick with a crypto source where available. */
-function pick<T>(items: readonly T[]): T {
-  const idx = Math.floor(Math.random() * items.length);
-  return items[Math.min(idx, items.length - 1)]!;
-}
-
 /**
- * Client-side fallback. Used ONLY when the assign endpoint is unreachable.
- * Sets source='fallback' so the count is reportable as a limitation — random
- * assignment at N=40 does not preserve the exact 13/13/14 split the sequence
- * exists to guarantee.
+ * There is no server assign endpoint any more (change_spec_group_codes.md):
+ * arm comes from the recruiting link's group code, decoded and resolved
+ * synchronously in src/data/groupCodes.ts / src/machine/SessionContext.tsx.
+ * That also removes the failure mode where an unreachable endpoint silently
+ * forced every participant into a fallback assignment.
  */
-export function fallbackAssignment(): Assignment {
-  return {
-    source: 'fallback',
-    slot: -1,
-    arm: pick(ARMS),
-    order: pick(BLOCK_ORDERS),
-    pairing: pick(BRAND_PAIRINGS),
-  };
-}
-
-/**
- * Fetches the next counterbalance slot. Called AFTER consent (PRD §7): calling
- * it at page load would let curious visitors burn slots without participating.
- */
-export async function fetchAssignment(timeoutMs = 8000): Promise<Assignment> {
-  if (!isConfigured()) return fallbackAssignment();
-  try {
-    const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), timeoutMs);
-    const res = await fetch(`${endpoint()}?action=assign`, {
-      method: 'GET',
-      redirect: 'follow',
-      signal: ctrl.signal,
-    });
-    clearTimeout(timer);
-    if (!res.ok) return fallbackAssignment();
-    const data = (await res.json()) as AssignResponse;
-    if (!data.ok || !data.arm || !data.order || !data.pairing) {
-      return fallbackAssignment();
-    }
-    return {
-      source: 'server',
-      slot: data.slot ?? -1,
-      arm: data.arm,
-      order: data.order,
-      pairing: data.pairing,
-    };
-  } catch {
-    return fallbackAssignment();
-  }
-}
 
 /** Single POST attempt. Resolves with ok:false rather than throwing. */
 export async function postRow(row: Row, timeoutMs = 12000): Promise<PostResponse> {

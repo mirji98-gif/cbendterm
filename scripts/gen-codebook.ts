@@ -23,7 +23,6 @@ import {
 } from '../src/data/comparative';
 import { COLUMNS, BLOCK_PREFIXES } from '../src/data/columns';
 import { ARM_TARGETS, ARMS, DECLINE_COPY } from '../src/data/conditions';
-import { ASSIGNMENT_SEQUENCE, CELL_LABELS, SEQUENCE_SEED, DESIGN_N } from '../src/data/sequence';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(HERE, '..');
@@ -31,21 +30,6 @@ const ROOT = resolve(HERE, '..');
 const esc = (s: string) => s.replace(/\|/g, '\\|');
 
 // ── codebook.md ────────────────────────────────────────────────────────────
-
-const cellCounts = CELL_LABELS.map(
-  (_, idx) =>
-    ASSIGNMENT_SEQUENCE.slice(0, DESIGN_N).filter((s) => `${s.order}/${s.pairing}` === CELL_LABELS[idx]).length,
-);
-
-const perArmCell = ARMS.map((arm) => ({
-  arm,
-  counts: CELL_LABELS.map(
-    (label, idx) =>
-      ASSIGNMENT_SEQUENCE.slice(0, DESIGN_N).filter(
-        (s) => s.arm === arm && `${s.order}/${s.pairing}` === CELL_LABELS[idx],
-      ).length,
-  ),
-}));
 
 const groups = [...new Set(COLUMNS.map((c) => c.group))];
 
@@ -217,25 +201,26 @@ ${Object.entries(DECLINE_COPY).map(([k, v]) => `| \`${k}\` | "${v}" |`).join('\n
 "X", tap-target size, contrast, animation and timing are identical, enforced by
 \`src/screens/Popup.identical.test.tsx\`.
 
-## 8. Assignment sequence
+## 8. Assignment mechanism
 
-Pre-generated, seeded (\`${SEQUENCE_SEED}\`), served one slot at a time by the Apps Script
-\`assign\` endpoint under a script lock. ${ASSIGNMENT_SEQUENCE.length} slots: the first ${DESIGN_N}
-are the design, the remaining ${ASSIGNMENT_SEQUENCE.length - DESIGN_N} are insurance against
-participants who consent and then drop (which permanently burns a slot).
+**Arm and recruiter come from the recruiting link, not from the app** (change_spec_group_codes.md,
+v3). Each participant's link carries an opaque \`?g=\` code; decoding it (\`src/data/groupCodes.ts\`)
+gives both the arm and the recruiter in one step. The exact code-to-arm-to-recruiter table is
+deliberately **not** reproduced here — see \`README.md\` (kept by the study team, never shared with
+participants) and the source file itself. A missing or unrecognised code never falls back to a
+fixed arm: the client draws one uniformly at random and records \`assignment_source = "random"\`
+with an empty \`recruiter_id\`, so that count is visible and reportable as a limitation rather than
+silently stacking participants into one condition.
 
-Arms over slots 0–${DESIGN_N - 1}: ${ARMS.map((a) => `**${a}** ${ARM_TARGETS[a]}`).join(', ')}.
+\`order\` and \`pairing\` are nuisance factors, not the allocation being controlled, so they are drawn
+per participant with \`Math.random()\` rather than from a pre-generated sequence — exact balance
+across cells isn't required, only that they vary.
 
-**Marginal counterbalance cells: ${cellCounts.join(' / ')}** — exactly balanced.
-
-| Arm | ${CELL_LABELS.map((c) => c.replace('/', ' · ')).join(' | ')} | n |
-| --- | ${CELL_LABELS.map(() => '---').join(' | ')} | --- |
-${perArmCell.map((r) => `| ${r.arm} | ${r.counts.join(' | ')} | ${r.counts.reduce((a, b) => a + b, 0)} |`).join('\n')}
-
-> **Documented imbalance.** 13 is not divisible by 4, so per-arm cells cannot all be equal. The
-> extra participants are placed so the *marginal* cell counts come out exactly equal, which is the
-> best achievable allocation. Report the per-arm cell counts above as a design fact; they are not
-> an accident of randomisation.
+> **Superseded.** Versions of this app before change_spec_group_codes.md used a pre-generated,
+> seeded 52-slot sequence served one slot at a time by the Apps Script's \`assign\` endpoint, which
+> guaranteed an exact 13/13/14 split. That endpoint still exists in \`apps-script/Code.gs\` (the
+> script was left unmodified) but the client no longer calls it — arm now comes entirely from the
+> link. Do not treat \`?action=assign\` as live; it is vestigial.
 
 ## 9. Response-type coding (derived, never asked)
 
@@ -260,8 +245,9 @@ Apply before analysis:
    block's latency uninterpretable.
 4. \`resumed_after_reload == TRUE\` **with null timing** — the participant reloaded mid-measurement.
    Self-report is still usable; the behavioural columns for that block are null by design.
-5. \`assignment_source == "fallback"\` — not part of the balanced design. Report the count as a
-   limitation rather than dropping silently.
+5. \`assignment_source == "random"\` — the participant's link had a missing or unrecognised group
+   code, so the client picked an arm uniformly at random. Not part of the intended 15/15/15
+   allocation. Report the count as a limitation rather than dropping silently.
 
 ## 11. Deviations from the PRD / v1 instrument
 
@@ -269,6 +255,7 @@ Each is deliberate; each is here so the write-up can state it rather than discov
 
 | PRD / v1 says | Implemented as | Why |
 | --- | --- | --- |
+| Arm assigned by the app (pre-generated sequence via the Apps Script) | Arm decoded from the recruiting link's \`?g=\` group code; \`order\`/\`pairing\` drawn per participant | change_spec_group_codes.md (v3): a clean 15/15/15 split needs each arm drawing from all four recruiters' circles, which only the links can guarantee. \`slot\` is removed from the schema entirely. |
 | 72 rated items, 9 multi-item scales | 8 rated items (B1–B4 × 2 blocks) + downstream choice + comparative block | Instrument v2 (\`Instrument_v2.md\`): reliability traded for completion at N = 40 on phones. |
 | Cronbach's alpha per scale | None — every rated item is single-item | No multi-item scale exists in v2 to compute alpha over. |
 | Recognition check, immediate options | Awareness check, descriptive (non-literal) options, still asked after both blocks | Both v1 and v2 ask retrospectively; v2's options describe the wording's implication rather than quoting it, so no option can cue the participant who saw that exact condition. |

@@ -55,10 +55,10 @@ if (n_partial > 0) {
 }
 d <- d[d$status == "complete", ]
 
-n_fallback <- sum(d$assignment_source == "fallback", na.rm = TRUE)
-if (n_fallback > 0) {
-  cat(sprintf("  ⚠ fallback assignments kept:   %d — outside the balanced design.\n", n_fallback))
-  cat("    Report this count as a limitation.\n")
+n_random <- sum(d$assignment_source == "random", na.rm = TRUE)
+if (n_random > 0) {
+  cat(sprintf("  ⚠ random-fallback assignments kept: %d — code was missing/mistyped, no recruiter attributed.\n", n_random))
+  cat("    Report this count as a limitation; it is outside the intended 15/15/15 allocation.\n")
 }
 
 # Render-gap exclusion is applied PER BLOCK, not per participant: a slow paint
@@ -89,6 +89,31 @@ if (any(shortfall > 0)) {
   cat("\n  Still needed: ",
       paste(names(shortfall)[shortfall > 0], shortfall[shortfall > 0],
             sep = "=", collapse = ", "), "\n")
+}
+cat("\n  NOTE: ARM_TARGETS above is the value generated from src/data/conditions.ts,\n")
+cat("  which this codebase still states as 13/13/14 (N=40) — change_spec_group_codes.md's\n")
+cat("  own stated goal is a 15/15/15 split (N=45), but it did not ask for that constant to\n")
+cat("  be changed anywhere, so it was left as-is. Update ARM_TARGETS in conditions.ts (and\n")
+cat("  re-run npm run gen) if 15/15/15 should be the reported target.\n\n")
+
+# change_spec_group_codes.md §6: arm x recruiter balance, so a recruiter
+# effect (or a recruiter who never got their links out) is visible now,
+# not discovered after the fact. recruiter_id is blank for random-fallback
+# assignments, which is expected and reported separately above.
+cat("Arm x recruiter_id (blank = random-fallback assignment):\n")
+recruiter_factor <- factor(d$recruiter_id, levels = c("1", "2", "3", "4", ""))
+arm_x_recruiter <- table(factor(d$arm, levels = ARMS), recruiter_factor)
+print(arm_x_recruiter)
+empty_cells <- which(arm_x_recruiter[, c("1", "2", "3", "4")] == 0, arr.ind = TRUE)
+if (nrow(empty_cells) > 0) {
+  cat("\n  ⚠ Zero participants for these arm x recruiter combinations:\n")
+  for (r in seq_len(nrow(empty_cells))) {
+    cat(sprintf("    %s x recruiter %s\n",
+                rownames(arm_x_recruiter)[empty_cells[r, 1]],
+                colnames(arm_x_recruiter[, c("1", "2", "3", "4")])[empty_cells[r, 2]]))
+  }
+  cat("  That arm is not drawing from that recruiter's circle at all --\n")
+  cat("  exactly the imbalance the group-code scheme was meant to prevent.\n")
 }
 cat("\n")
 
@@ -182,7 +207,7 @@ cat("\n")
 # ─────────────────────────────────────────────────────────────────────────────
 # THE PRIMARY OUTCOME. Differencing within participant removes every stable
 # individual difference — baseline grumpiness, scale-use style, how much they
-# like fragrance — which is worth a great deal at N=40.
+# like fragrance — which is worth a great deal at a sample this size.
 for (item in RATED_ITEMS) d[[paste0("d_", item)]] <- num(d[[paste0("diff_", item)]])
 d$d_b5 <- num(d$diff_b5)
 
@@ -252,7 +277,7 @@ within_df <- do.call(rbind, within_rows)
 # 7. Between-arm comparison on the difference scores
 # ─────────────────────────────────────────────────────────────────────────────
 cat("── Between arms, on the difference scores ──────────────\n")
-cat("   Primary evidence at N=40 is DIRECTION and EFFECT SIZE.\n")
+cat("   Primary evidence at this sample size is DIRECTION and EFFECT SIZE.\n")
 cat("   p-values are support, not the headline (PRD §11).\n\n")
 
 between_rows <- list()
@@ -281,7 +306,7 @@ for (o in OUTCOMES) {
   }
 
   # Pairwise Hedges' g with 95% CI. Uncorrected: with three planned contrasts
-  # at N=40, a Bonferroni correction buys nothing but a wider CI you would
+  # at this sample size, a Bonferroni correction buys nothing but a wider CI you would
   # report anyway. Say so in the write-up.
   pairs <- list(c("strong", "mild"), c("strong", "autonomy"), c("mild", "autonomy"))
   for (pr in pairs) {
@@ -334,7 +359,7 @@ cat("\n")
 # 10. The mediation claim, descriptively
 # ─────────────────────────────────────────────────────────────────────────────
 # Coulter & Pinto (1995): irritation/anger, not felt guilt, mediates the
-# damage. At N=40 a formal mediation model is not credible, so this reports
+# damage. At this sample size a formal mediation model is not credible, so this reports
 # the correlations the argument rests on and lets the write-up be honest.
 cat("── Irritation as the mediator (descriptive only) ───────\n")
 if (all(c("d_b2_irritation", "d_b4_trust") %in% names(d))) {
@@ -352,7 +377,7 @@ if (all(c("d_b2_irritation", "d_b4_trust") %in% names(d))) {
     r <- cor(d[[v[1]]][ok], d[[v[2]]][ok])
     cat(sprintf("   %-38s r = %6.2f  (n=%d)\n", nm, r, sum(ok)))
   }
-  cat("\n   N=40 does not support a formal mediation model. Report these as\n")
+  cat("\n   This sample size does not support a formal mediation model. Report these as\n")
   cat("   correlations consistent (or not) with Coulter & Pinto, not as a test.\n\n")
 }
 

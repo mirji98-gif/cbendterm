@@ -6,7 +6,7 @@
 > Because the CSV, this codebook and `analysis/generated_scales.R` are all produced from those
 > files, they cannot describe an instrument different from the one actually administered.
 
-One row per participant. **100 columns.**
+One row per participant. **99 columns.**
 
 This is **Instrument v2** (see `Instrument_v2.md`, which replaces PRD §4 and §5). It trades the
 v1 multi-item, multi-factor battery (72 rated items, Cronbach's alpha, five factors) for five
@@ -167,27 +167,26 @@ the neutral brand, so the experimental brand is Brand 2 and the raw scale must r
 "X", tap-target size, contrast, animation and timing are identical, enforced by
 `src/screens/Popup.identical.test.tsx`.
 
-## 8. Assignment sequence
+## 8. Assignment mechanism
 
-Pre-generated, seeded (`20260910`), served one slot at a time by the Apps Script
-`assign` endpoint under a script lock. 52 slots: the first 40
-are the design, the remaining 12 are insurance against
-participants who consent and then drop (which permanently burns a slot).
+**Arm and recruiter come from the recruiting link, not from the app** (change_spec_group_codes.md,
+v3). Each participant's link carries an opaque `?g=` code; decoding it (`src/data/groupCodes.ts`)
+gives both the arm and the recruiter in one step. The exact code-to-arm-to-recruiter table is
+deliberately **not** reproduced here — see `README.md` (kept by the study team, never shared with
+participants) and the source file itself. A missing or unrecognised code never falls back to a
+fixed arm: the client draws one uniformly at random and records `assignment_source = "random"`
+with an empty `recruiter_id`, so that count is visible and reportable as a limitation rather than
+silently stacking participants into one condition.
 
-Arms over slots 0–39: **mild** 13, **strong** 13, **autonomy** 14.
+`order` and `pairing` are nuisance factors, not the allocation being controlled, so they are drawn
+per participant with `Math.random()` rather than from a pre-generated sequence — exact balance
+across cells isn't required, only that they vary.
 
-**Marginal counterbalance cells: 10 / 10 / 10 / 10** — exactly balanced.
-
-| Arm | neutral_first · aurevella_neutral | neutral_first · veloure_neutral | exp_first · aurevella_neutral | exp_first · veloure_neutral | n |
-| --- | --- | --- | --- | --- | --- |
-| mild | 4 | 3 | 3 | 3 | 13 |
-| strong | 3 | 4 | 3 | 3 | 13 |
-| autonomy | 3 | 3 | 4 | 4 | 14 |
-
-> **Documented imbalance.** 13 is not divisible by 4, so per-arm cells cannot all be equal. The
-> extra participants are placed so the *marginal* cell counts come out exactly equal, which is the
-> best achievable allocation. Report the per-arm cell counts above as a design fact; they are not
-> an accident of randomisation.
+> **Superseded.** Versions of this app before change_spec_group_codes.md used a pre-generated,
+> seeded 52-slot sequence served one slot at a time by the Apps Script's `assign` endpoint, which
+> guaranteed an exact 13/13/14 split. That endpoint still exists in `apps-script/Code.gs` (the
+> script was left unmodified) but the client no longer calls it — arm now comes entirely from the
+> link. Do not treat `?action=assign` as live; it is vestigial.
 
 ## 9. Response-type coding (derived, never asked)
 
@@ -212,8 +211,9 @@ Apply before analysis:
    block's latency uninterpretable.
 4. `resumed_after_reload == TRUE` **with null timing** — the participant reloaded mid-measurement.
    Self-report is still usable; the behavioural columns for that block are null by design.
-5. `assignment_source == "fallback"` — not part of the balanced design. Report the count as a
-   limitation rather than dropping silently.
+5. `assignment_source == "random"` — the participant's link had a missing or unrecognised group
+   code, so the client picked an arm uniformly at random. Not part of the intended 15/15/15
+   allocation. Report the count as a limitation rather than dropping silently.
 
 ## 11. Deviations from the PRD / v1 instrument
 
@@ -221,6 +221,7 @@ Each is deliberate; each is here so the write-up can state it rather than discov
 
 | PRD / v1 says | Implemented as | Why |
 | --- | --- | --- |
+| Arm assigned by the app (pre-generated sequence via the Apps Script) | Arm decoded from the recruiting link's `?g=` group code; `order`/`pairing` drawn per participant | change_spec_group_codes.md (v3): a clean 15/15/15 split needs each arm drawing from all four recruiters' circles, which only the links can guarantee. `slot` is removed from the schema entirely. |
 | 72 rated items, 9 multi-item scales | 8 rated items (B1–B4 × 2 blocks) + downstream choice + comparative block | Instrument v2 (`Instrument_v2.md`): reliability traded for completion at N = 40 on phones. |
 | Cronbach's alpha per scale | None — every rated item is single-item | No multi-item scale exists in v2 to compute alpha over. |
 | Recognition check, immediate options | Awareness check, descriptive (non-literal) options, still asked after both blocks | Both v1 and v2 ask retrospectively; v2's options describe the wording's implication rather than quoting it, so no option can cue the participant who saw that exact condition. |
@@ -238,7 +239,7 @@ Each is deliberate; each is here so the write-up can state it rather than discov
 | Column | Type | Scale / values | Description |
 | --- | --- | --- | --- |
 | `participant_id` | string | — | Client-generated UUID, minted at consent. Upsert key — a checkpoint row and the final row share it. |
-| `recruiter_id` | string | — | From ?r=1..4 in the recruiting link. Empty if the link carried no tag. |
+| `recruiter_id` | string | — | Decoded from the ?g= group code in the recruiting link (1-4). Empty when assignment_source is "random" — a missing or unrecognised code has no recruiter to attribute. |
 | `status` | enum | `partial`, `complete` | complete = participant reached submit. partial = a checkpoint row that was never superseded, i.e. the participant dropped out. |
 | `is_debug` | bool | — | TRUE for ?debug=1 sessions. Debug runs write real rows through the real code path; filter them out of every count and export. |
 | `app_version` | string | — | Build identifier, so a mid-fieldwork change (e.g. the v1→v2 instrument swap) is detectable in the data. |
@@ -247,9 +248,8 @@ Each is deliberate; each is here so the write-up can state it rather than discov
 
 | Column | Type | Scale / values | Description |
 | --- | --- | --- | --- |
-| `assignment_source` | enum | `server`, `fallback`, `debug` | server = slot from the Apps Script assign endpoint. fallback = assign endpoint failed and the client randomised. debug = forced via URL. Report the fallback count as a limitation. |
-| `slot` | int | — | Index into the pre-generated sequence (see codebook §Assignment sequence). -1 for fallback assignment. |
-| `arm` | enum | `mild`, `strong`, `autonomy` | Between-subjects framing arm. |
+| `assignment_source` | enum | `group_code`, `random`, `debug` | group_code = arm and recruiter decoded from a valid ?g= link. random = the code was missing or unrecognised, so the client picked an arm uniformly at random (never a fixed default). debug = forced via ?debug=1. Report the random count as a limitation — it is not part of the intended 15/15/15 allocation. |
+| `arm` | enum | `mild`, `strong`, `autonomy` | Between-subjects framing arm. Comes from the recruiting link, not from the app (change_spec_group_codes.md). |
 | `order` | enum | `neutral_first`, `exp_first` | Presentation order counterbalance. Also determines which brand is "Brand 1" / "Brand 2" in the comparative block. |
 | `pairing` | enum | `aurevella_neutral`, `veloure_neutral` | Brand-condition pairing counterbalance: which brand carried the neutral pop-up. |
 | `brand_neutral` | string | — | Brand that showed the neutral pop-up. |

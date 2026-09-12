@@ -15,8 +15,7 @@ import { blockAtPosition } from './types';
 
 /** Linear successor for every step. Branching steps are handled below. */
 const NEXT: Record<Step, Step | null> = {
-  consent: 'assigning',
-  assigning: 'instructions',
+  consent: 'instructions',
   instructions: 'store_1',
   store_1: 'product_1',
   product_1: 'popup_1',

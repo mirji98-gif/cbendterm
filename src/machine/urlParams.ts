@@ -1,17 +1,21 @@
 /**
  * URL parameter parsing.
  *
- * Recruiter link format:  https://<host>/?r=1        (r = 1..4)
- * Debug:                  ?debug=1&arm=strong&order=exp_first&pairing=veloure_neutral
- * Admin:                  ?admin=1&key=<ADMIN_KEY>
+ * Recruiting link format:  https://<host>/?g=<code>   (opaque group code — see groupCodes.ts)
+ * Debug:                   ?debug=1&arm=strong&order=exp_first&pairing=veloure_neutral
+ * Admin:                   ?admin=1&key=<ADMIN_KEY>
  *
  * Debug flags are inert without ?debug=1 — a participant who happens to have
- * ?arm= in their link gets a normal server assignment.
+ * ?arm= in their link still gets assigned from their ?g= code (or randomly).
+ * `?g=` itself is parsed here as an opaque string only; it is never decoded,
+ * logged, or displayed until src/data/groupCodes.ts looks it up at the point
+ * of assignment, after consent.
  */
 import { ARMS, BLOCK_ORDERS, BRAND_PAIRINGS, type Arm, type BlockOrder, type BrandPairing } from '../data/conditions';
 
 export interface UrlConfig {
-  recruiterId: string;
+  /** Raw ?g= value, untouched. `null` if absent. Decoded only in groupCodes.ts. */
+  groupCode: string | null;
   isDebug: boolean;
   isAdmin: boolean;
   adminKey: string;
@@ -25,8 +29,6 @@ function oneOf<T extends string>(value: string | null, allowed: readonly T[]): T
 export function parseUrl(search: string = window.location.search): UrlConfig {
   const p = new URLSearchParams(search);
   const isDebug = p.get('debug') === '1';
-  const r = p.get('r') ?? '';
-  const recruiterId = /^[1-9]\d?$/.test(r) ? r : '';
 
   const forced = isDebug
     ? {
@@ -37,7 +39,7 @@ export function parseUrl(search: string = window.location.search): UrlConfig {
     : null;
 
   return {
-    recruiterId,
+    groupCode: p.get('g'),
     isDebug,
     isAdmin: p.get('admin') === '1',
     adminKey: p.get('key') ?? '',

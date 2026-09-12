@@ -61,14 +61,13 @@ const COMPARATIVE_SENTINELS: readonly ComparativeSentinel[] = [
 // ── Session-level identification and metadata ─────────────────────────────
 const SESSION_COLUMNS: ColumnSpec[] = [
   { name: 'participant_id', group: 'Session', type: 'string', description: 'Client-generated UUID, minted at consent. Upsert key — a checkpoint row and the final row share it.' },
-  { name: 'recruiter_id', group: 'Session', type: 'string', description: 'From ?r=1..4 in the recruiting link. Empty if the link carried no tag.' },
+  { name: 'recruiter_id', group: 'Session', type: 'string', description: 'Decoded from the ?g= group code in the recruiting link (1-4). Empty when assignment_source is "random" — a missing or unrecognised code has no recruiter to attribute.' },
   { name: 'status', group: 'Session', type: 'enum', values: ['partial', 'complete'], description: 'complete = participant reached submit. partial = a checkpoint row that was never superseded, i.e. the participant dropped out.' },
   { name: 'is_debug', group: 'Session', type: 'bool', description: 'TRUE for ?debug=1 sessions. Debug runs write real rows through the real code path; filter them out of every count and export.' },
   { name: 'app_version', group: 'Session', type: 'string', description: 'Build identifier, so a mid-fieldwork change (e.g. the v1→v2 instrument swap) is detectable in the data.' },
 
-  { name: 'assignment_source', group: 'Assignment', type: 'enum', values: ['server', 'fallback', 'debug'], description: "server = slot from the Apps Script assign endpoint. fallback = assign endpoint failed and the client randomised. debug = forced via URL. Report the fallback count as a limitation." },
-  { name: 'slot', group: 'Assignment', type: 'int', description: 'Index into the pre-generated sequence (see codebook §Assignment sequence). -1 for fallback assignment.' },
-  { name: 'arm', group: 'Assignment', type: 'enum', values: ['mild', 'strong', 'autonomy'], description: 'Between-subjects framing arm.' },
+  { name: 'assignment_source', group: 'Assignment', type: 'enum', values: ['group_code', 'random', 'debug'], description: "group_code = arm and recruiter decoded from a valid ?g= link. random = the code was missing or unrecognised, so the client picked an arm uniformly at random (never a fixed default). debug = forced via ?debug=1. Report the random count as a limitation — it is not part of the intended 15/15/15 allocation." },
+  { name: 'arm', group: 'Assignment', type: 'enum', values: ['mild', 'strong', 'autonomy'], description: 'Between-subjects framing arm. Comes from the recruiting link, not from the app (change_spec_group_codes.md).' },
   { name: 'order', group: 'Assignment', type: 'enum', values: ['neutral_first', 'exp_first'], description: 'Presentation order counterbalance. Also determines which brand is "Brand 1" / "Brand 2" in the comparative block.' },
   { name: 'pairing', group: 'Assignment', type: 'enum', values: ['aurevella_neutral', 'veloure_neutral'], description: 'Brand-condition pairing counterbalance: which brand carried the neutral pop-up.' },
   { name: 'brand_neutral', group: 'Assignment', type: 'string', description: 'Brand that showed the neutral pop-up.' },

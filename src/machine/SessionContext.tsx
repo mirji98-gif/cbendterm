@@ -10,14 +10,53 @@ import { reducer, initialSession, type Action } from './reducer';
 import { load, save, clear, isResumable } from './persist';
 import { parseUrl, newParticipantId, type UrlConfig } from './urlParams';
 import { makeEvent, now, nowIso, ms } from '../instrumentation/clock';
-import { fetchAssignment, fallbackAssignment, postRow, submitWithRetry, beaconCheckpoint } from '../net/api';
+import { postRow, submitWithRetry, beaconCheckpoint } from '../net/api';
 import { serializeSession } from '../net/serialize';
+import { lookupGroupCode, randomArm, randomOrderAndPairing } from '../data/groupCodes';
 import type { RatedItemId, DownstreamChoice } from '../data/items';
 import type { Choice } from '../data/conditions';
 import type { Assignment, BlockData, BlockKey, EndMatter, Session, Step } from './types';
 
-/** Bumped alongside SCHEMA_VERSION for Instrument v2 — see codebook.md §9. */
-const APP_VERSION = '2.0.0';
+/** Bumped for the group-code assignment change (change_spec_group_codes.md). */
+const APP_VERSION = '3.0.0';
+
+/**
+ * Resolves arm, order, pairing and recruiter for a new session. Pure aside
+ * from Math.random — no I/O, no network, so this runs synchronously the
+ * moment consent is accepted. Debug overrides (?debug=1&arm=...) take
+ * priority over a group code, exactly as before; a group code takes priority
+ * over the random fallback; a missing or unrecognised code NEVER falls back
+ * to a fixed arm (change_spec_group_codes.md §1) — it draws uniformly at
+ * random, same as order and pairing always do.
+ */
+function resolveAssignment(url: UrlConfig): { assignment: Assignment; recruiterId: string } {
+  const { order, pairing } = randomOrderAndPairing();
+
+  if (url.forced) {
+    return {
+      assignment: {
+        source: 'debug',
+        arm: url.forced.arm ?? randomArm(),
+        order: url.forced.order ?? order,
+        pairing: url.forced.pairing ?? pairing,
+      },
+      recruiterId: '',
+    };
+  }
+
+  const decoded = lookupGroupCode(url.groupCode);
+  if (decoded) {
+    return {
+      assignment: { source: 'group_code', arm: decoded.arm, order, pairing },
+      recruiterId: String(decoded.recruiter),
+    };
+  }
+
+  return {
+    assignment: { source: 'random', arm: randomArm(), order, pairing },
+    recruiterId: '',
+  };
+}
 
 interface SessionApi {
   session: Session;
@@ -59,7 +98,6 @@ function bootstrap(url: UrlConfig): { session: Session; restoredFrom: Step | nul
   return {
     session: initialSession({
       participantId: newParticipantId(),
-      recruiterId: url.recruiterId,
       isDebug: url.isDebug,
       startedAtIso: nowIso(),
       startedAtPerf: now(),
@@ -107,34 +145,6 @@ export function SessionProvider({ children }: { children: ReactNode }): JSX.Elem
   );
 
   const send = useCallback((action: Action) => dispatch(action), []);
-
-  // ── Assignment. Fetched AFTER consent so curious visitors cannot burn slots.
-  const assignRequested = useRef(false);
-  useEffect(() => {
-    if (session.step !== 'assigning' || assignRequested.current) return;
-    assignRequested.current = true;
-
-    void (async () => {
-      let assignment: Assignment;
-      if (url.forced) {
-        const base = fallbackAssignment();
-        assignment = {
-          source: 'debug',
-          slot: -1,
-          arm: url.forced.arm ?? base.arm,
-          order: url.forced.order ?? base.order,
-          pairing: url.forced.pairing ?? base.pairing,
-        };
-      } else {
-        assignment = await fetchAssignment();
-      }
-      send({
-        type: 'assignment_resolved',
-        assignment,
-        event: makeEvent('assignment_resolved', { ...assignment }),
-      });
-    })();
-  }, [session.step, url.forced, send]);
 
   // ── Checkpoint writes.
   // A closed tab sends nothing, so without these `abandoned` would be FALSE
@@ -216,8 +226,17 @@ export function SessionProvider({ children }: { children: ReactNode }): JSX.Elem
       session,
       url,
       durationS,
-      acceptConsent: () =>
-        send({ type: 'consent_accepted', event: makeEvent('consent_accepted') }),
+      acceptConsent: () => {
+        const { assignment, recruiterId } = resolveAssignment(url);
+        // Log the DECODED arm and recruiter, never the raw ?g= code — the
+        // code is the one thing that must never reach the data or the UI.
+        send({
+          type: 'consent_accepted',
+          assignment,
+          recruiterId,
+          event: makeEvent('consent_accepted', { ...assignment, recruiter_id: recruiterId }),
+        });
+      },
       advance: (payload) => send({ type: 'advance', event: makeEvent('advance', payload) }),
       storeEntered: (block) =>
         send({ type: 'store_entered', block, at: now(), event: makeEvent('store_entered', {}, block) }),

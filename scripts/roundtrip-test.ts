@@ -4,7 +4,12 @@
  * Proves, against the real generated apps-script/Code.gs:
  *   1. the health check responds
  *   2. assign hands out distinct, sequential slots from the balanced sequence
- *   3. a full participant row POSTs and lands
+ *      (VESTIGIAL as of change_spec_group_codes.md — the client no longer
+ *      calls this endpoint, arm now comes from the recruiting link's group
+ *      code. Kept here because the Apps Script itself is unchanged and still
+ *      serves it; this proves that claim rather than assuming it.)
+ *   3. a full participant row POSTs and lands, with no slot column and a
+ *      populated recruiter_id
  *   4. verify confirms it landed
  *   5. a partial checkpoint row is UPSERTED (not duplicated) by the final submit
  *   6. the exported CSV header is byte-identical to the client's column list
@@ -113,7 +118,7 @@ async function main(): Promise<void> {
     const s1 = fakeSession({
       participantId: 'p-complete-001',
       arm: 'strong', order: 'exp_first', pairing: 'veloure_neutral',
-      slot: 0, complete: true,
+      complete: true, recruiterId: '4',
     });
     const row1 = serializeSession(s1, { status: 'complete', durationS: 402.7 });
     check(
@@ -137,7 +142,7 @@ async function main(): Promise<void> {
     const s2partial = fakeSession({
       participantId: 'p-upsert-002',
       arm: 'mild', order: 'neutral_first', pairing: 'aurevella_neutral',
-      slot: 1, complete: false,
+      complete: false,
     });
     const partialRow = serializeSession(s2partial, { status: 'partial', durationS: 61.2 });
     const postPartial = await postJson(partialRow);
@@ -147,7 +152,7 @@ async function main(): Promise<void> {
     const s2full = fakeSession({
       participantId: 'p-upsert-002',
       arm: 'mild', order: 'neutral_first', pairing: 'aurevella_neutral',
-      slot: 1, complete: true,
+      complete: true,
     });
     const fullRow = serializeSession(s2full, { status: 'complete', durationS: 388.1 });
     const postFull = await postJson(fullRow);
@@ -203,12 +208,26 @@ async function main(): Promise<void> {
       ),
     );
 
+    // change_spec_group_codes.md §7, verification case 6: no slot column, a
+    // populated recruiter_id, and the source reflects the group code.
+    check('no slot column in the sheet header', idx('slot') === -1, `found at index ${idx('slot')}`);
+    check(
+      'recruiter_id is populated for a group-code assignment',
+      dataRow[idx('recruiter_id')] === '4',
+      `got: "${dataRow[idx('recruiter_id')]}"`,
+    );
+    check(
+      'assignment_source records group_code',
+      dataRow[idx('assignment_source')] === 'group_code',
+      `got: "${dataRow[idx('assignment_source')]}"`,
+    );
+
     // ── 8. stats + debug exclusion ─────────────────────────────────────────
     console.log('\n8. Stats and debug exclusion');
     const debugSession = fakeSession({
       participantId: 'p-debug-999',
       arm: 'autonomy', order: 'exp_first', pairing: 'aurevella_neutral',
-      slot: 2, complete: true, isDebug: true,
+      complete: true, isDebug: true, assignmentSource: 'debug',
     });
     await postJson(serializeSession(debugSession, { status: 'complete', durationS: 120 }));
 

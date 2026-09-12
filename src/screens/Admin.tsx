@@ -44,16 +44,22 @@ export function Admin({ adminKey }: { adminKey: string }): JSX.Element {
         <Stat label="Completed" value={`${stats.completed} / ${total}`} />
         <Stat label="Abandoned" value={`${stats.partial} (${Math.round(stats.abandonment_rate * 100)}%)`} />
         <Stat label="Median duration" value={`${Math.round(stats.median_duration_s / 6) / 10} min`} />
-        <Stat label="Slots used" value={`${stats.cursor} / ${stats.sequence_length}`} />
       </div>
 
-      {stats.fallback_assignments > 0 && (
-        <p className="text-[13px] bg-amber-50 border border-amber-200 rounded-lg p-3 mb-5">
-          <strong>{stats.fallback_assignments}</strong> participant(s) were assigned by client-side
-          fallback because the assign endpoint failed. Those are not part of the balanced design —
-          report the count as a limitation.
-        </p>
-      )}
+      {/*
+        change_spec_group_codes.md: arm now comes from the recruiting link's
+        group code, not the Apps Script `assign` endpoint, so `stats.cursor` /
+        `stats.sequence_length` (a "Slots used" tile lived here before) are
+        permanently frozen at 0 and would be actively misleading — removed.
+        `stats.fallback_assignments` is also dead from the client's side: no
+        row can have assignment_source='fallback' any more (the new vocabulary
+        is 'group_code' | 'random' | 'debug'), so that warning banner is gone
+        too. A live count of 'random' assignments (missing/mistyped codes)
+        would need a Code.gs change to stats_(), which is out of scope per the
+        spec ("Apps Script needs no changes") — until/unless that's added,
+        check the random count via Download CSV + analysis_starter.R, which
+        already reports it.
+      */}
 
       <h2 className="text-[14px] font-semibold mb-2">Completed per arm</h2>
       <table className="w-full text-[13px] mb-6 tabular-nums">

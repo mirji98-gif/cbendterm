@@ -2,7 +2,7 @@
  * ═══════════════════════════════════════════════════════════════════════════
  *  Confirmshaming Storefront Study — Google Apps Script Web App
  *  GENERATED FILE. Edit scripts/apps-script.template.gs, then `npm run gen`.
- *  100 columns · 52 assignment slots · sequence seed 20260910
+ *  99 columns · 52 assignment slots · sequence seed 20260910
  * ═══════════════════════════════════════════════════════════════════════════
  *
  * Deployment: see README.md → "Deploy the Apps Script". In short:
@@ -44,7 +44,6 @@ var COLUMNS = [
   'is_debug',
   'app_version',
   'assignment_source',
-  'slot',
   'arm',
   'order',
   'pairing',

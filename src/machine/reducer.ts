@@ -14,12 +14,11 @@ import type {
 import { blockAtPosition, brandForBlock } from './types';
 import { nextStep, isTimingCritical } from './steps';
 
-export const SCHEMA_VERSION = 2;
+export const SCHEMA_VERSION = 3;
 
 export type Action =
   | { type: 'log'; event: LoggedEvent }
-  | { type: 'consent_accepted'; event: LoggedEvent }
-  | { type: 'assignment_resolved'; assignment: Assignment; event: LoggedEvent }
+  | { type: 'consent_accepted'; assignment: Assignment; recruiterId: string; event: LoggedEvent }
   | { type: 'advance'; event: LoggedEvent }
   | { type: 'store_entered'; block: BlockKey; at: number; event: LoggedEvent }
   | { type: 'product_viewed'; block: BlockKey; sku: string; event: LoggedEvent }
@@ -100,12 +99,17 @@ export function reducer(session: Session, action: Action): Session {
     case 'log':
       return s;
 
+    // Assignment is resolved synchronously (a URL decode + Math.random, no
+    // network) before this fires, so consent goes straight to instructions —
+    // there is no intermediate 'assigning' step or loading state any more.
     case 'consent_accepted':
-      return goto(s, 'assigning');
-
-    case 'assignment_resolved':
       return goto(
-        { ...s, assignment: action.assignment, blocks: buildBlocks(action.assignment) },
+        {
+          ...s,
+          assignment: action.assignment,
+          blocks: buildBlocks(action.assignment),
+          recruiterId: action.recruiterId,
+        },
         'instructions',
       );
 
@@ -258,7 +262,6 @@ export function emptyEndMatter(): EndMatter {
 
 export function initialSession(opts: {
   participantId: string;
-  recruiterId: string;
   isDebug: boolean;
   startedAtIso: string;
   startedAtPerf: number;
@@ -272,7 +275,9 @@ export function initialSession(opts: {
     schema: SCHEMA_VERSION,
     step: 'consent',
     participantId: opts.participantId,
-    recruiterId: opts.recruiterId,
+    // Set at consent time, once the group code (if any) is decoded —
+    // there's nothing to attribute before that.
+    recruiterId: '',
     isDebug: opts.isDebug,
     assignment: null,
     blocks: null,
