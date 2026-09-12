@@ -12,41 +12,57 @@ import { parseUrl, newParticipantId, type UrlConfig } from './urlParams';
 import { makeEvent, now, nowIso, ms } from '../instrumentation/clock';
 import { postRow, submitWithRetry, beaconCheckpoint } from '../net/api';
 import { serializeSession } from '../net/serialize';
-import { lookupGroupCode, randomArm, randomOrderAndPairing } from '../data/groupCodes';
+import { lookupGroupCode, randomArm, randomOrder } from '../data/groupCodes';
+import { LOCKED_PAIRING } from '../data/conditions';
 import type { RatedItemId, DownstreamChoice } from '../data/items';
 import type { Choice } from '../data/conditions';
 import type { Assignment, BlockKey, EndMatter, PopupKey, PopupResult, Session, Step } from './types';
 
-/** Bumped for the v4 change (change_spec_v4_final.md): two pop-ups per brand, three group codes, no recruiter. */
-const APP_VERSION = '4.0.0';
+/** change_spec_v4_2: locked brand pairing + the new identifier columns. */
+const APP_VERSION = '4.2.0';
 
 /**
- * Resolves arm, order and pairing for a new session. Pure aside from
- * Math.random — no I/O, no network, so this runs synchronously the moment
- * consent is accepted. Debug overrides (?debug=1&arm=...) take priority over
- * a group code, exactly as before; a group code takes priority over the
- * random fallback; a missing or unrecognised code NEVER falls back to a
- * fixed arm — it draws uniformly at random, same as order and pairing always
- * do. v4 drops the recruiter dimension entirely (change_spec_v4_final.md §1).
+ * Resolves arm and order for a new session. Pure aside from Math.random — no
+ * I/O, no network, so this runs synchronously the moment consent is accepted.
+ * Debug overrides (?debug=1&arm=...) take priority over a group code, exactly
+ * as before; a group code takes priority over the random fallback; a missing
+ * or unrecognised code NEVER falls back to a fixed arm — it draws uniformly at
+ * random, same as order always does.
+ *
+ * change_spec_v4_2 Part 1: `pairing` is no longer drawn. It is written as the
+ * locked constant so the row still documents the design.
+ *
+ * Returns the raw `?g=` string alongside, but ONLY when it actually decoded —
+ * a bad code leaves group_code empty next to assignment_source='random', so
+ * the two columns together say "this participant's link did not work".
  */
-function resolveAssignment(url: UrlConfig): Assignment {
-  const { order, pairing } = randomOrderAndPairing();
+function resolveAssignment(url: UrlConfig): { assignment: Assignment; groupCode: string } {
+  const order = randomOrder();
 
   if (url.forced) {
     return {
-      source: 'debug',
-      arm: url.forced.arm ?? randomArm(),
-      order: url.forced.order ?? order,
-      pairing: url.forced.pairing ?? pairing,
+      assignment: {
+        source: 'debug',
+        arm: url.forced.arm ?? randomArm(),
+        order: url.forced.order ?? order,
+        pairing: LOCKED_PAIRING,
+      },
+      groupCode: '',
     };
   }
 
   const decoded = lookupGroupCode(url.groupCode);
   if (decoded) {
-    return { source: 'group_code', arm: decoded, order, pairing };
+    return {
+      assignment: { source: 'group_code', arm: decoded, order, pairing: LOCKED_PAIRING },
+      groupCode: url.groupCode ?? '',
+    };
   }
 
-  return { source: 'random', arm: randomArm(), order, pairing };
+  return {
+    assignment: { source: 'random', arm: randomArm(), order, pairing: LOCKED_PAIRING },
+    groupCode: '',
+  };
 }
 
 interface SessionApi {
@@ -148,7 +164,7 @@ export function SessionProvider({ children }: { children: ReactNode }): JSX.Elem
     if (checkpointed.current.has(session.step)) return;
     checkpointed.current.add(session.step);
     const row = serializeSession(sessionRef.current, {
-      status: 'partial',
+      status: 'incomplete',
       durationS: durationS(),
     });
     void postRow(row);
@@ -161,7 +177,7 @@ export function SessionProvider({ children }: { children: ReactNode }): JSX.Elem
       if (s.step === 'debrief' || s.step === 'rescue' || s.step === 'consent') return;
       if (document.visibilityState !== 'hidden') return;
       beaconCheckpoint(
-        serializeSession(s, { status: 'partial', durationS: durationS() }),
+        serializeSession(s, { status: 'incomplete', durationS: durationS() }),
       );
     };
     document.addEventListener('visibilitychange', onHide);
@@ -218,13 +234,12 @@ export function SessionProvider({ children }: { children: ReactNode }): JSX.Elem
       url,
       durationS,
       acceptConsent: () => {
-        const assignment = resolveAssignment(url);
-        // Log the DECODED arm, never the raw ?g= code — the code is the one
-        // thing that must never reach the data or the UI.
+        const { assignment, groupCode } = resolveAssignment(url);
         send({
           type: 'consent_accepted',
           assignment,
-          event: makeEvent('consent_accepted', { ...assignment }),
+          groupCode,
+          event: makeEvent('consent_accepted', { ...assignment, group_code: groupCode }),
         });
       },
       advance: (payload) => send({ type: 'advance', event: makeEvent('advance', payload) }),

@@ -13,6 +13,7 @@ import { RATED_ITEMS } from '../data/items';
 import { AWARENESS_STEM } from '../data/awareness';
 import { DECLINE_COPY } from '../data/conditions';
 import { nextStep, showProgress, isShoppingStep, popupKeyForStep, QUESTIONNAIRE_STEPS } from './steps';
+import { popupPosition } from './types';
 import type { Step } from './types';
 
 describe('measurement order (Instrument_v2.md)', () => {
@@ -128,6 +129,26 @@ describe('change_spec_v4_final.md Part 3 — revised flow, two pop-ups per block
     expect(popupKeyForStep('continuation_1')).toBe('p2');
     expect(popupKeyForStep('continuation_2')).toBe('p2');
     expect(popupKeyForStep('store_1')).toBeNull();
+  });
+});
+
+describe('change_spec_v4_2 — pop-up position identifies fatigue order', () => {
+  it('numbers the four pop-ups 1-4 with no duplicates, in either order', () => {
+    for (const order of ['neutral_first', 'exp_first'] as const) {
+      const positions = (['neutral', 'exp'] as const).flatMap((block) =>
+        (['p1', 'p2'] as const).map((popup) => popupPosition(order, block, popup)),
+      );
+      expect(new Set(positions).size, `${order} produced duplicate positions`).toBe(4);
+      expect([...positions].sort()).toEqual([1, 2, 3, 4]);
+    }
+  });
+
+  it('gives the first-visited block positions 1 and 2', () => {
+    expect(popupPosition('neutral_first', 'neutral', 'p1')).toBe(1);
+    expect(popupPosition('neutral_first', 'neutral', 'p2')).toBe(2);
+    expect(popupPosition('neutral_first', 'exp', 'p1')).toBe(3);
+    expect(popupPosition('exp_first', 'exp', 'p1')).toBe(1);
+    expect(popupPosition('exp_first', 'neutral', 'p1')).toBe(3);
   });
 });
 

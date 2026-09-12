@@ -84,22 +84,25 @@ export type BlockOrder = 'neutral_first' | 'exp_first';
 
 export const BLOCK_ORDERS: readonly BlockOrder[] = ['neutral_first', 'exp_first'] as const;
 
-/** Which brand carries the neutral pop-up. The other carries the experimental one. */
-export type BrandPairing = 'aurevella_neutral' | 'veloure_neutral';
+/**
+ * Which brand carries the neutral pop-up.
+ *
+ * change_spec_v4_2 Part 1: this is no longer counterbalanced. Aurevella always
+ * carries the neutral pop-ups and Maison Veloure always the experimental ones,
+ * in every arm, for every participant. The type therefore has exactly one
+ * value, so a stray re-introduction of the draw will not typecheck.
+ *
+ * The `pairing` COLUMN stays in the data on purpose: it writes this constant on
+ * every row so the dataset documents its own design rather than leaving a
+ * future reader to infer it from absence.
+ *
+ * The cost of this is that brand identity is now perfectly confounded with
+ * condition — see src/data/brands.ts for the matching work that is the only
+ * remaining defence, and README.md for the limitation as it must be written up.
+ */
+export type BrandPairing = 'locked_aurevella_neutral';
 
-export const BRAND_PAIRINGS: readonly BrandPairing[] = [
-  'aurevella_neutral',
-  'veloure_neutral',
-] as const;
-
-/** One counterbalance slot from the pre-generated sequence. */
-export interface Slot {
-  /** 0-based index into ASSIGNMENT_SEQUENCE. */
-  slot: number;
-  arm: Arm;
-  order: BlockOrder;
-  pairing: BrandPairing;
-}
+export const LOCKED_PAIRING: BrandPairing = 'locked_aurevella_neutral';
 
 /**
  * Response-type coding (PRD §5.2), derived at analysis time — never asked.

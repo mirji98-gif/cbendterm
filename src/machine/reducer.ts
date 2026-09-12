@@ -17,11 +17,11 @@ import type {
 import { blockAtPosition, brandForBlock, emptyPopupResult } from './types';
 import { nextStep, isTimingCritical, popupKeyForStep } from './steps';
 
-export const SCHEMA_VERSION = 4;
+export const SCHEMA_VERSION = 5;
 
 export type Action =
   | { type: 'log'; event: LoggedEvent }
-  | { type: 'consent_accepted'; assignment: Assignment; event: LoggedEvent }
+  | { type: 'consent_accepted'; assignment: Assignment; groupCode: string; event: LoggedEvent }
   | { type: 'advance'; event: LoggedEvent }
   | { type: 'store_entered'; block: BlockKey; at: number; event: LoggedEvent }
   | { type: 'product_viewed'; block: BlockKey; sku: string; event: LoggedEvent }
@@ -123,6 +123,7 @@ export function reducer(session: Session, action: Action): Session {
         {
           ...s,
           assignment: action.assignment,
+          groupCode: action.groupCode,
           blocks: buildBlocks(action.assignment),
         },
         'instructions',
@@ -297,6 +298,9 @@ export function initialSession(opts: {
     schema: SCHEMA_VERSION,
     step: 'consent',
     participantId: opts.participantId,
+    // Set at consent, once the code has been decoded — nothing to record
+    // before that, and a code that never decoded stays empty.
+    groupCode: '',
     isDebug: opts.isDebug,
     assignment: null,
     blocks: null,

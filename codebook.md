@@ -6,7 +6,7 @@
 > Because the CSV, this codebook and `analysis/generated_scales.R` are all produced from those
 > files, they cannot describe an instrument different from the one actually administered.
 
-One row per participant. **129 columns.**
+One row per participant. **144 columns.**
 
 This is **Instrument v2** (see `Instrument_v2.md`, which replaces PRD §4 and §5). It trades the
 v1 multi-item, multi-factor battery (72 rated items, Cronbach's alpha, five factors) for five
@@ -258,51 +258,39 @@ Each is deliberate; each is here so the write-up can state it rather than discov
 
 ## 13. All columns
 
-### Session
+### Session identity
 
 | Column | Type | Scale / values | Description |
 | --- | --- | --- | --- |
 | `participant_id` | string | — | Client-generated UUID, minted at consent. Upsert key — a checkpoint row and the final row share it. |
-| `status` | enum | `partial`, `complete` | complete = participant reached submit. partial = a checkpoint row that was never superseded, i.e. the participant dropped out. |
-| `is_debug` | bool | — | TRUE for ?debug=1 sessions. Debug runs write real rows through the real code path; filter them out of every count and export. |
-| `app_version` | string | — | Build identifier, so a mid-fieldwork change is detectable in the data. |
-
-### Assignment
-
-| Column | Type | Scale / values | Description |
-| --- | --- | --- | --- |
-| `assignment_source` | enum | `group_code`, `random`, `debug` | group_code = arm decoded from a valid ?g= link. random = the code was missing or unrecognised, so the client picked an arm uniformly at random (never a fixed default). debug = forced via ?debug=1. |
-| `arm` | enum | `mild`, `strong`, `autonomy` | Between-subjects framing arm. Comes from the recruiting link (change_spec_v4_final.md), not from a recruiter — v4 drops the recruiter dimension entirely. |
-| `order` | enum | `neutral_first`, `exp_first` | Presentation order counterbalance. Also determines which brand is "Brand 1" / "Brand 2" in the comparative block. |
-| `pairing` | enum | `aurevella_neutral`, `veloure_neutral` | Brand-condition pairing counterbalance: which brand carried the neutral pop-up. |
-| `brand_neutral` | string | — | Brand that showed the neutral pop-ups. |
-| `brand_experimental` | string | — | Brand that showed the experimental (arm) pop-ups. This is `exp_brand` in the recoding rules below. |
-
-### Timing
-
-| Column | Type | Scale / values | Description |
-| --- | --- | --- | --- |
+| `app_version` | string | — | Build identifier, so a mid-fieldwork change is detectable in the data. 4.2.0 is the locked-pairing build. |
+| `status` | enum | `complete`, `incomplete` | complete = participant reached submit. incomplete = a checkpoint row that was never superseded, i.e. the participant dropped out. Never a silent partial row: every incomplete row also carries abandoned=TRUE and abandoned_at_step. |
+| `is_debug` | bool | — | TRUE for ?debug=1 sessions. Debug runs write real rows through the real code path, so they are filterable rather than deletable-by-memory. Exclude them from every count. |
 | `started_at` | iso8601 | — | Wall clock at consent, UTC. Phone clocks can be skewed — do not compute durations from this. |
 | `submitted_at` | iso8601 | — | Wall clock at submit, UTC. |
 | `received_at` | iso8601 | — | Server-side receipt time, written by the Apps Script. Compare with submitted_at to detect device clock skew. |
 | `duration_s` | float | — | Consent → submit, computed from performance.now() deltas rather than wall clock, so a device clock jump cannot corrupt it. |
-
-### Environment
-
-| Column | Type | Scale / values | Description |
-| --- | --- | --- | --- |
 | `device` | string | — | Full user-agent string. Needed to interpret timing: mobile jank makes latency noisy, and device class is the first thing to check when it does. |
 | `viewport` | string | — | CSS pixel viewport at start, "WxH". |
 | `dpr` | float | — | devicePixelRatio at session start. Together with viewport it reconstructs the physical size the participant actually saw the pop-up at. |
 | `touch` | bool | — | TRUE if the device reported touch support. Press-dwell is near-meaningless when TRUE (no hover on touch). |
+| `abandoned` | bool | — | TRUE when the row is a checkpoint that was never superseded by a completed submit. Session-level because a participant abandons a session, not a pop-up. See the per-pop-up `*_abandoned` columns for which specific pop-ups were never reached. |
+| `abandoned_at_step` | string | — | Last step reached before the session stopped, as of the moment this row was written. Blank for completed sessions. |
+| `resumed_after_reload` | bool | — | TRUE if the participant reloaded mid-session and state was restored from localStorage. When the interrupted step was a pop-up, confirmation or continuation screen, that pop-up’s timing fields are NULL by design — never re-measured, because a re-rendered pop-up produces a clean-looking but meaningless latency. |
 
-### Attrition
+### Condition identity
 
 | Column | Type | Scale / values | Description |
 | --- | --- | --- | --- |
-| `abandoned` | bool | — | TRUE when the row is a checkpoint that was never superseded by a completed submit. Session-level because per-block abandonment is not identifiable — a participant abandons a session, not a pop-up. See the per-pop-up `*_abandoned` columns below for which specific pop-ups were never reached. |
-| `abandoned_at_step` | string | — | Last step reached before the session stopped. Blank for completed sessions. |
-| `resumed_after_reload` | bool | — | TRUE if the participant reloaded mid-session and state was restored from localStorage. When the interrupted step was a pop-up, confirmation or continuation screen, that pop-up’s timing fields are NULL by design — never re-measured, because a re-rendered pop-up produces a clean-looking but meaningless latency. |
+| `group_code` | enum | `k7m2`, `p6hd`, `n1ls`, `` | The raw ?g= value as received, when it decoded to an arm. Empty when the link carried no code or an unrecognised one — in which case assignment_source is "random". Recorded in the dataset only; never rendered anywhere a participant could see it. |
+| `arm` | enum | `mild`, `strong`, `autonomy` | Between-subjects framing arm, decoded from the recruiting link. |
+| `assignment_source` | enum | `group_code`, `random`, `debug` | group_code = arm decoded from a valid ?g= link. random = the code was missing or unrecognised, so the client picked an arm uniformly at random (never a fixed default). debug = forced via ?debug=1, which also sets is_debug. |
+| `order` | enum | `neutral_first`, `exp_first` | Which store the participant visited first. Randomised per session. Also determines which brand is "Brand 1" / "Brand 2" in the comparative block. |
+| `pairing` | enum | `locked_aurevella_neutral` | Brand-condition pairing. CONSTANT BY DESIGN as of change_spec_v4_2: Aurevella always carried the neutral pop-ups and Maison Veloure the experimental ones. Written on every row so the dataset documents the design rather than leaving it to be inferred. Brand is therefore confounded with condition — see README limitations. |
+| `brand_neutral` | string | — | Brand that showed the neutral pop-ups. Always Aurevella. |
+| `brand_experimental` | string | — | Brand that showed the experimental (arm) pop-ups. Always Maison Veloure. This is `exp_brand` in the recoding rules below. |
+| `decline_text_neutral` | string | — | The literal decline-button string shown on both neutral pop-ups, written from the same constant the pop-up renders. Records what the participant actually saw rather than a label pointing at code that may since have changed — if a wording bug ever ships, this column is how you find out. |
+| `decline_text_experimental` | string | — | The literal decline-button string shown on both experimental pop-ups, written from the same constant the pop-up renders. Must correspond to `arm` on every row; analysis_starter.R asserts this and refuses to run if it does not. |
 
 ### Behavioural — neutral block
 
@@ -319,6 +307,9 @@ Each is deliberate; each is here so the write-up can state it rather than discov
 
 | Column | Type | Scale / values | Description |
 | --- | --- | --- | --- |
+| `neutral_p1_brand` | enum | `Aurevella`, `Maison Veloure` | Which store showed this pop-up. Fixed by condition as of v4.2 — Aurevella for the neutral pair, Maison Veloure for the experimental pair. |
+| `neutral_p1_ask` | enum | `email`, `social_follow` | What this pop-up asked for in exchange for the discount: an email address at checkout (p1) or a social follow after purchase (p2). Neither is ever actually collected. |
+| `neutral_p1_position` | enum | `1`, `2`, `3`, `4` | Where this pop-up fell in the session, 1-4. Derived from `order`. THIS IS WHAT LETS YOU TEST FATIGUE: with four pop-ups, acceptance very likely declines across the session, and without position that decline cannot be separated from condition. |
 | `neutral_p1_choice` | enum | `accept`, `decline_button`, `close_x`, `backdrop`, `timeout` | How this pop-up was resolved. `timeout` = no committed action within the pop-up timeout (45s). |
 | `neutral_p1_response_code` | enum | `comply`, `resist`, `avoid`, `ignore` | Derived coding. Recomputed in analysis_starter.R from choice + latency + awareness so the Ignore threshold can be re-tuned; the stored value uses 1500 ms. |
 | `neutral_p1_latency_ms` | float | — | This pop-up fully rendered → first committed action. A primary behavioural DV. NULL means data loss, not "no response". |
@@ -337,6 +328,9 @@ Each is deliberate; each is here so the write-up can state it rather than discov
 
 | Column | Type | Scale / values | Description |
 | --- | --- | --- | --- |
+| `neutral_p2_brand` | enum | `Aurevella`, `Maison Veloure` | Which store showed this pop-up. Fixed by condition as of v4.2 — Aurevella for the neutral pair, Maison Veloure for the experimental pair. |
+| `neutral_p2_ask` | enum | `email`, `social_follow` | What this pop-up asked for in exchange for the discount: an email address at checkout (p1) or a social follow after purchase (p2). Neither is ever actually collected. |
+| `neutral_p2_position` | enum | `1`, `2`, `3`, `4` | Where this pop-up fell in the session, 1-4. Derived from `order`. THIS IS WHAT LETS YOU TEST FATIGUE: with four pop-ups, acceptance very likely declines across the session, and without position that decline cannot be separated from condition. |
 | `neutral_p2_choice` | enum | `accept`, `decline_button`, `close_x`, `backdrop`, `timeout` | How this pop-up was resolved. `timeout` = no committed action within the pop-up timeout (45s). |
 | `neutral_p2_response_code` | enum | `comply`, `resist`, `avoid`, `ignore` | Derived coding. Recomputed in analysis_starter.R from choice + latency + awareness so the Ignore threshold can be re-tuned; the stored value uses 1500 ms. |
 | `neutral_p2_latency_ms` | float | — | This pop-up fully rendered → first committed action. A primary behavioural DV. NULL means data loss, not "no response". |
@@ -350,18 +344,6 @@ Each is deliberate; each is here so the write-up can state it rather than discov
 | `neutral_p2_rage_taps` | int | — | Runs of ≥3 pointerdowns within 500 ms inside a 48 px box. Cheap frustration proxy. |
 | `neutral_p2_popup_render_gap_ms` | float | — | Trigger action (add-to-bag for p1; pop-up 1 resolving for p2) → this pop-up's first painted frame (double-rAF after mount). Sessions with a >2s render gap are excluded (see codebook §10). |
 | `neutral_p2_abandoned` | bool | — | TRUE when this pop-up was never resolved (choice is blank) — either because the row is a checkpoint the participant dropped out of before reaching it, or dropped after it rendered but before responding. Always FALSE on a complete row. |
-
-### Self-report — neutral block
-
-| Column | Type | Scale / values | Description |
-| --- | --- | --- | --- |
-| `neutral_b1_guilt` | likert7 | 7-point intensity, 1 = not at all … 7 = very strongly (1 = Not at all … 7 = Very strongly) | I felt guilty about declining this brand's offers. *Keeps H1 testable — without a guilt item there is no basis for calling this a guilt appeal, which is the entire premise of the Peng et al. prediction. Worded as guilt about DECLINING, not about the brand. change_spec_v4_final.md Part 4 moves the stem to brand level: with two pop-ups per brand now sharing the same decline wording, "this brand's offers" (plural) is the accurate referent, not any single pop-up.* |
-| `neutral_b2_irritation` | likert7 | 7-point intensity, 1 = not at all … 7 = very strongly (1 = Not at all … 7 = Very strongly) | I felt irritated by the way this brand presented its offers. *THE MEDIATOR. Per Coulter & Pinto (1995), anger/irritation — not felt guilt — carries the damage to trust and purchase intention. Treat this as the mediator in analysis, not a descriptive aside.* |
-| `neutral_b3_manipulation` | likert7 | 7-point Likert, 1 = strongly disagree … 7 = strongly agree (1 = Strongly disagree … 7 = Strongly agree) | The way this brand presented its offers was intended to pressure me into accepting. *Tests H3 (perceived manipulative intent).* |
-| `neutral_b4_trust` | likert7 | 7-point Likert, 1 = strongly disagree … 7 = strongly agree (1 = Strongly disagree … 7 = Strongly agree) | I would trust this brand. *Deliberately LEVEL-framed, not change-framed ("compared with before" etc.). The within-person difference score (experimental − neutral) is what measures the trust penalty; if the item itself also contained a comparison, the two would nest and become uninterpretable. A level item also lets trust go UP, which H4 predicts for the autonomy arm — a change-framed item cannot detect that.* |
-| `neutral_b5_raw` | enum | `buy`, `compare`, `competitor`, `avoid`, `not_sure` | Downstream behavioural choice: what the participant says they would do next. |
-| `neutral_b5_ord` | int | — | Ordinal recode of b5_raw: buy=3, compare=2, competitor=1, avoid=0, not_sure=blank. Feeds diff_b5. |
-| `neutral_b6_open` | string | — | Optional open-ended, asked once per brand. Blank = skipped, which is always allowed. |
 
 ### Behavioural — experimental block
 
@@ -378,6 +360,9 @@ Each is deliberate; each is here so the write-up can state it rather than discov
 
 | Column | Type | Scale / values | Description |
 | --- | --- | --- | --- |
+| `exp_p1_brand` | enum | `Aurevella`, `Maison Veloure` | Which store showed this pop-up. Fixed by condition as of v4.2 — Aurevella for the neutral pair, Maison Veloure for the experimental pair. |
+| `exp_p1_ask` | enum | `email`, `social_follow` | What this pop-up asked for in exchange for the discount: an email address at checkout (p1) or a social follow after purchase (p2). Neither is ever actually collected. |
+| `exp_p1_position` | enum | `1`, `2`, `3`, `4` | Where this pop-up fell in the session, 1-4. Derived from `order`. THIS IS WHAT LETS YOU TEST FATIGUE: with four pop-ups, acceptance very likely declines across the session, and without position that decline cannot be separated from condition. |
 | `exp_p1_choice` | enum | `accept`, `decline_button`, `close_x`, `backdrop`, `timeout` | How this pop-up was resolved. `timeout` = no committed action within the pop-up timeout (45s). |
 | `exp_p1_response_code` | enum | `comply`, `resist`, `avoid`, `ignore` | Derived coding. Recomputed in analysis_starter.R from choice + latency + awareness so the Ignore threshold can be re-tuned; the stored value uses 1500 ms. |
 | `exp_p1_latency_ms` | float | — | This pop-up fully rendered → first committed action. A primary behavioural DV. NULL means data loss, not "no response". |
@@ -396,6 +381,9 @@ Each is deliberate; each is here so the write-up can state it rather than discov
 
 | Column | Type | Scale / values | Description |
 | --- | --- | --- | --- |
+| `exp_p2_brand` | enum | `Aurevella`, `Maison Veloure` | Which store showed this pop-up. Fixed by condition as of v4.2 — Aurevella for the neutral pair, Maison Veloure for the experimental pair. |
+| `exp_p2_ask` | enum | `email`, `social_follow` | What this pop-up asked for in exchange for the discount: an email address at checkout (p1) or a social follow after purchase (p2). Neither is ever actually collected. |
+| `exp_p2_position` | enum | `1`, `2`, `3`, `4` | Where this pop-up fell in the session, 1-4. Derived from `order`. THIS IS WHAT LETS YOU TEST FATIGUE: with four pop-ups, acceptance very likely declines across the session, and without position that decline cannot be separated from condition. |
 | `exp_p2_choice` | enum | `accept`, `decline_button`, `close_x`, `backdrop`, `timeout` | How this pop-up was resolved. `timeout` = no committed action within the pop-up timeout (45s). |
 | `exp_p2_response_code` | enum | `comply`, `resist`, `avoid`, `ignore` | Derived coding. Recomputed in analysis_starter.R from choice + latency + awareness so the Ignore threshold can be re-tuned; the stored value uses 1500 ms. |
 | `exp_p2_latency_ms` | float | — | This pop-up fully rendered → first committed action. A primary behavioural DV. NULL means data loss, not "no response". |
@@ -410,6 +398,17 @@ Each is deliberate; each is here so the write-up can state it rather than discov
 | `exp_p2_popup_render_gap_ms` | float | — | Trigger action (add-to-bag for p1; pop-up 1 resolving for p2) → this pop-up's first painted frame (double-rAF after mount). Sessions with a >2s render gap are excluded (see codebook §10). |
 | `exp_p2_abandoned` | bool | — | TRUE when this pop-up was never resolved (choice is blank) — either because the row is a checkpoint the participant dropped out of before reaching it, or dropped after it rendered but before responding. Always FALSE on a complete row. |
 
+### Self-report — neutral block
+
+| Column | Type | Scale / values | Description |
+| --- | --- | --- | --- |
+| `neutral_b1_guilt` | likert7 | 7-point intensity, 1 = not at all … 7 = very strongly (1 = Not at all … 7 = Very strongly) | I felt guilty about declining this brand's offers. *Keeps H1 testable — without a guilt item there is no basis for calling this a guilt appeal, which is the entire premise of the Peng et al. prediction. Worded as guilt about DECLINING, not about the brand. change_spec_v4_final.md Part 4 moves the stem to brand level: with two pop-ups per brand now sharing the same decline wording, "this brand's offers" (plural) is the accurate referent, not any single pop-up.* |
+| `neutral_b2_irritation` | likert7 | 7-point intensity, 1 = not at all … 7 = very strongly (1 = Not at all … 7 = Very strongly) | I felt irritated by the way this brand presented its offers. *THE MEDIATOR. Per Coulter & Pinto (1995), anger/irritation — not felt guilt — carries the damage to trust and purchase intention. Treat this as the mediator in analysis, not a descriptive aside.* |
+| `neutral_b3_manipulation` | likert7 | 7-point Likert, 1 = strongly disagree … 7 = strongly agree (1 = Strongly disagree … 7 = Strongly agree) | The way this brand presented its offers was intended to pressure me into accepting. *Tests H3 (perceived manipulative intent).* |
+| `neutral_b4_trust` | likert7 | 7-point Likert, 1 = strongly disagree … 7 = strongly agree (1 = Strongly disagree … 7 = Strongly agree) | I would trust this brand. *Deliberately LEVEL-framed, not change-framed ("compared with before" etc.). The within-person difference score (experimental − neutral) is what measures the trust penalty; if the item itself also contained a comparison, the two would nest and become uninterpretable. A level item also lets trust go UP, which H4 predicts for the autonomy arm — a change-framed item cannot detect that.* |
+| `neutral_b5_raw` | enum | `buy`, `compare`, `competitor`, `avoid`, `not_sure` | Downstream behavioural choice: what the participant says they would do next. |
+| `neutral_b5_ord` | int | — | Ordinal recode of b5_raw: buy=3, compare=2, competitor=1, avoid=0, not_sure=blank. Feeds diff_b5. |
+
 ### Self-report — experimental block
 
 | Column | Type | Scale / values | Description |
@@ -420,20 +419,6 @@ Each is deliberate; each is here so the write-up can state it rather than discov
 | `exp_b4_trust` | likert7 | 7-point Likert, 1 = strongly disagree … 7 = strongly agree (1 = Strongly disagree … 7 = Strongly agree) | I would trust this brand. *Deliberately LEVEL-framed, not change-framed ("compared with before" etc.). The within-person difference score (experimental − neutral) is what measures the trust penalty; if the item itself also contained a comparison, the two would nest and become uninterpretable. A level item also lets trust go UP, which H4 predicts for the autonomy arm — a change-framed item cannot detect that.* |
 | `exp_b5_raw` | enum | `buy`, `compare`, `competitor`, `avoid`, `not_sure` | Downstream behavioural choice: what the participant says they would do next. |
 | `exp_b5_ord` | int | — | Ordinal recode of b5_raw: buy=3, compare=2, competitor=1, avoid=0, not_sure=blank. Feeds diff_b5. |
-| `exp_b6_open` | string | — | Optional open-ended, asked once per brand. Blank = skipped, which is always allowed. |
-
-### Difference scores
-
-| Column | Type | Scale / values | Description |
-| --- | --- | --- | --- |
-| `diff_b1_guilt` | float | — | exp_b1_guilt − neutral_b1_guilt. THE PRIMARY OUTCOME for this measure (within-person, experimental minus neutral). |
-| `diff_b2_irritation` | float | — | exp_b2_irritation − neutral_b2_irritation. THE PRIMARY OUTCOME for this measure (within-person, experimental minus neutral). |
-| `diff_b3_manipulation` | float | — | exp_b3_manipulation − neutral_b3_manipulation. THE PRIMARY OUTCOME for this measure (within-person, experimental minus neutral). |
-| `diff_b4_trust` | float | — | exp_b4_trust − neutral_b4_trust. THE PRIMARY OUTCOME for this measure (within-person, experimental minus neutral). |
-| `diff_b5` | float | — | exp_b5_ord − neutral_b5_ord. Blank if either side is not_sure. |
-| `neutral_accepts` | int | — | Count of the neutral block's two pop-ups accepted (0-2). |
-| `exp_accepts` | int | — | Count of the experimental block's two pop-ups accepted (0-2). |
-| `diff_accepts` | int | — | exp_accepts − neutral_accepts. A second, purely behavioural acceptance-count outcome alongside the rated-item difference scores. |
 
 ### Awareness
 
@@ -453,7 +438,6 @@ Each is deliberate; each is here so the write-up can state it rather than discov
 | `c3_raw` | int | 1 = much less … 4 = about the same … 7 = much more | Raw answer: trust in Brand 1 (position 1) compared with Brand 2 (position 2). NOT yet relative to condition — see c3_recoded. |
 | `c4_raw` | enum | `aurevella`, `veloure`, `compare_further`, `neither` | Raw answer: which brand the participant would choose for their next purchase. |
 | `c5_raw` | int | 1 = much worse … 4 = about the same … 7 = much better | Raw answer: overall experience with Brand 1 compared with Brand 2. NOT yet relative to condition — see c5_recoded. |
-| `c6_open` | string | — | Optional open-ended: biggest difference noticed between the two experiences. Blank = skipped. |
 
 ### Comparative — recoded
 
@@ -481,8 +465,29 @@ Each is deliberate; each is here so the write-up can state it rather than discov
 | `gender` | enum | `woman`, `man`, `non_binary`, `prefer_not` | Self-reported gender, including a prefer-not-to-say option. Covariate only; the design is not powered to test gender differences at this sample size. |
 | `occupation` | enum | `student`, `working`, `both`, `other` | Student / working status. |
 
+### Difference scores
+
+| Column | Type | Scale / values | Description |
+| --- | --- | --- | --- |
+| `diff_b1_guilt` | float | — | exp_b1_guilt − neutral_b1_guilt. THE PRIMARY OUTCOME for this measure (within-person, experimental minus neutral). |
+| `diff_b2_irritation` | float | — | exp_b2_irritation − neutral_b2_irritation. THE PRIMARY OUTCOME for this measure (within-person, experimental minus neutral). |
+| `diff_b3_manipulation` | float | — | exp_b3_manipulation − neutral_b3_manipulation. THE PRIMARY OUTCOME for this measure (within-person, experimental minus neutral). |
+| `diff_b4_trust` | float | — | exp_b4_trust − neutral_b4_trust. THE PRIMARY OUTCOME for this measure (within-person, experimental minus neutral). |
+| `diff_b5` | float | — | exp_b5_ord − neutral_b5_ord. Blank if either side is not_sure. |
+| `neutral_accepts` | int | — | Count of the neutral block's two pop-ups accepted (0-2). |
+| `exp_accepts` | int | — | Count of the experimental block's two pop-ups accepted (0-2). |
+| `diff_accepts` | int | — | exp_accepts − neutral_accepts. A second, purely behavioural acceptance-count outcome alongside the rated-item difference scores. |
+
+### Open-ended
+
+| Column | Type | Scale / values | Description |
+| --- | --- | --- | --- |
+| `neutral_b6_open` | string | — | Optional open-ended for the neutral brand, asked once per brand. Blank = skipped, which is always allowed. |
+| `exp_b6_open` | string | — | Optional open-ended for the experimental brand, asked once per brand. Blank = skipped, which is always allowed. |
+| `c6_open` | string | — | Optional open-ended from the comparative block: the biggest difference noticed between the two experiences. Blank = skipped. |
+
 ### Raw
 
 | Column | Type | Scale / values | Description |
 | --- | --- | --- | --- |
-| `event_log_json` | json | — | Full ordered event log, every entry stamped with performance.now(). This is the audit trail: if a derived timing column looks wrong, the truth is in here. |
+| `event_log_json` | json | — | Full ordered event log, every entry stamped with performance.now(). This is the audit trail: if a derived timing column looks wrong, the truth is in here. Last column by design — it is very wide and would otherwise obstruct reading the Sheet. |

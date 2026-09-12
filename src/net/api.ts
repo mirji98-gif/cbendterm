@@ -105,7 +105,7 @@ export async function submitWithRetry(
 /**
  * Fire-and-forget checkpoint for `visibilitychange`. sendBeacon survives the
  * page being backgrounded or closed, which a fetch does not — this is what
- * turns "closed the tab" from invisible into a row with status='partial'.
+ * turns "closed the tab" from invisible into a row with status='incomplete'.
  */
 export function beaconCheckpoint(row: Row): boolean {
   if (!isConfigured() || typeof navigator.sendBeacon !== 'function') return false;

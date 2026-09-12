@@ -11,7 +11,7 @@
  * logged, or displayed until src/data/groupCodes.ts looks it up at the point
  * of assignment, after consent.
  */
-import { ARMS, BLOCK_ORDERS, BRAND_PAIRINGS, type Arm, type BlockOrder, type BrandPairing } from '../data/conditions';
+import { ARMS, BLOCK_ORDERS, type Arm, type BlockOrder } from '../data/conditions';
 
 export interface UrlConfig {
   /** Raw ?g= value, untouched. `null` if absent. Decoded only in groupCodes.ts. */
@@ -19,7 +19,11 @@ export interface UrlConfig {
   isDebug: boolean;
   isAdmin: boolean;
   adminKey: string;
-  forced: { arm?: Arm; order?: BlockOrder; pairing?: BrandPairing } | null;
+  /**
+   * change_spec_v4_2 Part 1: `?pairing=` is gone — there is nothing left to
+   * force, since Aurevella is always the neutral brand.
+   */
+  forced: { arm?: Arm; order?: BlockOrder } | null;
 }
 
 function oneOf<T extends string>(value: string | null, allowed: readonly T[]): T | undefined {
@@ -34,7 +38,6 @@ export function parseUrl(search: string = window.location.search): UrlConfig {
     ? {
         ...(oneOf(p.get('arm'), ARMS) ? { arm: oneOf(p.get('arm'), ARMS)! } : {}),
         ...(oneOf(p.get('order'), BLOCK_ORDERS) ? { order: oneOf(p.get('order'), BLOCK_ORDERS)! } : {}),
-        ...(oneOf(p.get('pairing'), BRAND_PAIRINGS) ? { pairing: oneOf(p.get('pairing'), BRAND_PAIRINGS)! } : {}),
       }
     : null;
 

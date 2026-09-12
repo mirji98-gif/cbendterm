@@ -118,7 +118,7 @@ async function main(): Promise<void> {
     console.log('\n3. POST a complete participant row');
     const s1 = fakeSession({
       participantId: 'p-complete-001',
-      arm: 'strong', order: 'exp_first', pairing: 'veloure_neutral',
+      arm: 'strong', order: 'exp_first',
       complete: true,
     });
     const row1 = serializeSession(s1, { status: 'complete', durationS: 402.7 });
@@ -142,17 +142,17 @@ async function main(): Promise<void> {
     console.log('\n5. Checkpoint row is upserted, not duplicated');
     const s2partial = fakeSession({
       participantId: 'p-upsert-002',
-      arm: 'mild', order: 'neutral_first', pairing: 'aurevella_neutral',
+      arm: 'mild', order: 'neutral_first',
       complete: false,
     });
-    const partialRow = serializeSession(s2partial, { status: 'partial', durationS: 61.2 });
+    const partialRow = serializeSession(s2partial, { status: 'incomplete', durationS: 61.2 });
     const postPartial = await postJson(partialRow);
     check('partial checkpoint created', postPartial.ok && postPartial.created === true);
     check("partial row marked abandoned=TRUE", partialRow['abandoned'] === 'TRUE');
 
     const s2full = fakeSession({
       participantId: 'p-upsert-002',
-      arm: 'mild', order: 'neutral_first', pairing: 'aurevella_neutral',
+      arm: 'mild', order: 'neutral_first',
       complete: true,
     });
     const fullRow = serializeSession(s2full, { status: 'complete', durationS: 388.1 });
@@ -218,6 +218,44 @@ async function main(): Promise<void> {
       dataRow[idx('assignment_source')] === 'group_code',
       `got: "${dataRow[idx('assignment_source')]}"`,
     );
+    // change_spec_v4_2: every row must be self-describing.
+    check(
+      'pairing is the locked constant',
+      dataRow[idx('pairing')] === 'locked_aurevella_neutral',
+      `got: "${dataRow[idx('pairing')]}"`,
+    );
+    check(
+      'brand_neutral is Aurevella and brand_experimental is Maison Veloure',
+      dataRow[idx('brand_neutral')] === 'Aurevella' && dataRow[idx('brand_experimental')] === 'Maison Veloure',
+      `got: "${dataRow[idx('brand_neutral')]}" / "${dataRow[idx('brand_experimental')]}"`,
+    );
+    check(
+      'decline_text_neutral is the literal neutral string',
+      dataRow[idx('decline_text_neutral')] === 'No thanks',
+      `got: "${dataRow[idx('decline_text_neutral')]}"`,
+    );
+    check(
+      "decline_text_experimental is the arm's literal string",
+      dataRow[idx('decline_text_experimental')] === 'No thanks, I don’t need to save money',
+      `got: "${dataRow[idx('decline_text_experimental')]}"`,
+    );
+    check('group_code logs the link that produced the row', dataRow[idx('group_code')] === 'p6hd', `got: "${dataRow[idx('group_code')]}"`);
+    const positions = ['neutral_p1', 'neutral_p2', 'exp_p1', 'exp_p2'].map((p) => dataRow[idx(`${p}_position`)]);
+    check(
+      'the four pop-up positions are 1-4 with no duplicates',
+      new Set(positions).size === 4 && [...positions].sort().join(',') === '1,2,3,4',
+      `got: ${positions.join(',')}`,
+    );
+    check(
+      'each pop-up records its own brand and ask',
+      dataRow[idx('neutral_p1_brand')] === 'Aurevella' && dataRow[idx('exp_p1_brand')] === 'Maison Veloure'
+        && dataRow[idx('neutral_p1_ask')] === 'email' && dataRow[idx('neutral_p2_ask')] === 'social_follow',
+    );
+    check(
+      'the event log is the last column',
+      header[header.length - 1] === 'event_log_json',
+      `last column is "${header[header.length - 1]}"`,
+    );
     check(
       'exp_p2 accepted -> exp_accepts is 1',
       dataRow[idx('exp_accepts')] === '1',
@@ -233,7 +271,7 @@ async function main(): Promise<void> {
     console.log('\n8. Stats and debug exclusion');
     const debugSession = fakeSession({
       participantId: 'p-debug-999',
-      arm: 'autonomy', order: 'exp_first', pairing: 'aurevella_neutral',
+      arm: 'autonomy', order: 'exp_first',
       complete: true, isDebug: true, assignmentSource: 'debug',
     });
     await postJson(serializeSession(debugSession, { status: 'complete', durationS: 120 }));
@@ -251,6 +289,38 @@ async function main(): Promise<void> {
     check('stats without the key is refused', noKey.ok === false);
     const wrongKey = (await (await get('action=stats&key=nope')).json()) as { ok: boolean };
     check('stats with the wrong key is refused', wrongKey.ok === false);
+
+    // ── 9. forward compatibility ──────────────────────────────────────────
+    // change_spec_v4_2 Part 3 asks for this to be confirmed after a schema
+    // change: a client running ahead of a stale pasted Code.gs must not lose
+    // the new columns silently. The Apps Script widens the header instead.
+    console.log('\n9. Unknown columns are appended, not dropped');
+    {
+      const s3 = fakeSession({
+        participantId: 'p-future-003',
+        arm: 'autonomy', order: 'neutral_first',
+        complete: true,
+      });
+      const future = {
+        ...serializeSession(s3, { status: 'complete', durationS: 311.0 }),
+        a_column_from_the_future: 'kept',
+      };
+      const post3 = await postJson(future);
+      check('POST with an unknown key accepted', post3.ok === true, post3.error ?? '');
+      const csv3 = parseCsv(await (await get(`action=export&key=${encodeURIComponent(KEY)}`)).text());
+      const head3 = csv3[0]!;
+      check('the unknown column was appended to the header', head3.includes('a_column_from_the_future'));
+      check(
+        'it was appended at the far right, after event_log_json',
+        head3[head3.length - 1] === 'a_column_from_the_future',
+      );
+      const future3 = csv3.find((r) => r[head3.indexOf('participant_id')] === 'p-future-003')!;
+      check('its value survived rather than being dropped',
+        future3[head3.indexOf('a_column_from_the_future')] === 'kept');
+      check('the known columns are unaffected',
+        future3[head3.indexOf('pairing')] === 'locked_aurevella_neutral'
+        && future3[head3.indexOf('app_version')] === 'test');
+    }
 
     console.log(
       failures === 0

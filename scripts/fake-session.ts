@@ -3,7 +3,7 @@
  * the sheet schema can be proven end-to-end before any UI exists.
  */
 import { RATED_ITEMS } from '../src/data/items';
-import { DECLINE_COPY, type Arm, type BlockOrder, type BrandPairing } from '../src/data/conditions';
+import { DECLINE_COPY, LOCKED_PAIRING, type Arm, type BlockOrder, type BrandPairing } from '../src/data/conditions';
 import {
   blockAtPosition,
   brandForBlock,
@@ -75,19 +75,20 @@ export function fakeSession(opts: {
   participantId: string;
   arm: Arm;
   order: BlockOrder;
-  pairing: BrandPairing;
   complete: boolean;
   isDebug?: boolean;
   /** Defaults to 'group_code', matching a real link. */
   assignmentSource?: AssignmentSource;
 }): Session {
-  const { participantId, arm, order, pairing, complete } = opts;
+  const { participantId, arm, order, complete } = opts;
+  const pairing = LOCKED_PAIRING;
   const source = opts.assignmentSource ?? 'group_code';
   const now = new Date().toISOString();
   return {
-    schema: 4,
+    schema: 5,
     step: complete ? 'debrief' : 'block_1',
     participantId,
+    groupCode: (opts.assignmentSource ?? 'group_code') === 'group_code' ? 'p6hd' : '',
     isDebug: opts.isDebug ?? false,
     assignment: { source, arm, order, pairing },
     blocks: {

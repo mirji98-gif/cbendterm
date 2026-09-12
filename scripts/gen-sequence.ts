@@ -31,11 +31,26 @@ import {
   ARMS,
   ARM_TARGETS,
   BLOCK_ORDERS,
-  BRAND_PAIRINGS,
   type Arm,
   type BlockOrder,
-  type BrandPairing,
 } from '../src/data/conditions';
+
+/**
+ * VESTIGIAL as of change_spec_v4_2.
+ *
+ * Nothing in the live app reads this sequence: arm comes from the recruiting
+ * link, order is drawn per participant, and brand pairing is locked. It is
+ * still generated only because apps-script/Code.gs embeds it and the
+ * round-trip test exercises the (unused) assign endpoint against the real
+ * script.
+ *
+ * The legacy two-value pairing lives HERE rather than being imported from
+ * src/data/conditions, because the live `BrandPairing` type now has exactly
+ * one value. Typing a historical artefact against live experimental types is
+ * how dead code silently becomes load-bearing again.
+ */
+type LegacyPairing = 'aurevella_neutral' | 'veloure_neutral';
+const BRAND_PAIRINGS: readonly LegacyPairing[] = ['aurevella_neutral', 'veloure_neutral'];
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -47,7 +62,7 @@ const TOPUP_SLOTS = 12;
 
 interface Cell {
   order: BlockOrder;
-  pairing: BrandPairing;
+  pairing: LegacyPairing;
 }
 
 /** c0..c3 in a fixed order; index is meaningful and referenced below. */
@@ -99,7 +114,7 @@ function shuffled<T>(items: T[], rng: () => number): T[] {
 interface RawSlot {
   arm: Arm;
   order: BlockOrder;
-  pairing: BrandPairing;
+  pairing: LegacyPairing;
 }
 
 function buildBase(): RawSlot[] {
@@ -180,19 +195,26 @@ const out = `/**
  *
  * Per-arm cell counts (see codebook.md):
 ${ARMS.map((a) => ` *   ${a.padEnd(9)} ${perArmCell[a]!.join(' / ')}  (n=${armCounts[a]})`).join('\n')}
+ *
+ * VESTIGIAL as of change_spec_v4_2. Nothing in the live app reads this: arm
+ * comes from the recruiting link, order is drawn per participant, and brand
+ * pairing is locked to Aurevella-neutral. It survives only because
+ * apps-script/Code.gs embeds it and the round-trip test exercises the unused
+ * assign endpoint against the real script. The types below are deliberately
+ * local — this file must not depend on the live experimental types.
  */
-import type { Slot } from './conditions';
-
 export const SEQUENCE_SEED = ${SEED};
 export const DESIGN_N = 40;
 
-export const ASSIGNMENT_SEQUENCE: readonly Slot[] = [
-${body}
-] as const;
+export interface LegacySlot {
+  slot: number;
+  arm: 'mild' | 'strong' | 'autonomy';
+  order: 'neutral_first' | 'exp_first';
+  pairing: 'aurevella_neutral' | 'veloure_neutral';
+}
 
-/** Counterbalance cell index (0-3) for a slot, for the admin view. */
-export const CELL_LABELS: readonly string[] = [
-${cellLabels.map((l) => `  '${l}',`).join('\n')}
+export const ASSIGNMENT_SEQUENCE: readonly LegacySlot[] = [
+${body}
 ] as const;
 `;
 

@@ -24,7 +24,7 @@ import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { RATED_ITEMS, type DownstreamChoice } from '../src/data/items';
 import { COLUMN_NAMES } from '../src/data/columns';
-import { DECLINE_COPY, BLOCK_ORDERS, BRAND_PAIRINGS, type Arm, type BlockOrder, type BrandPairing, type Choice } from '../src/data/conditions';
+import { DECLINE_COPY, BLOCK_ORDERS, LOCKED_PAIRING, type Arm, type BlockOrder, type BrandPairing, type Choice } from '../src/data/conditions';
 import type { AwarenessAnswer } from '../src/data/awareness';
 import type { ComparativeRaw } from '../src/data/comparative';
 import { serializeSession } from '../src/net/serialize';
@@ -56,6 +56,8 @@ function pick<T>(items: readonly T[]): T {
 // dimension left to balance), shuffled so recruitment order isn't confounded
 // with arm.
 const ARMS_LIST: Arm[] = ['mild', 'strong', 'autonomy'];
+/** The real link each arm is recruited through, for the group_code column. */
+const CODE_FOR_ARM: Record<Arm, string> = { mild: 'k7m2', strong: 'p6hd', autonomy: 'n1ls' };
 const draws: Arm[] = [];
 for (const arm of ARMS_LIST) for (let i = 0; i < 15; i++) draws.push(arm);
 for (let i = draws.length - 1; i > 0; i--) {
@@ -168,7 +170,7 @@ draws.forEach((arm, i) => {
   const source: AssignmentSource = isRandomFallback ? 'random' : 'group_code';
 
   const order = pick(BLOCK_ORDERS);
-  const pairing = pick(BRAND_PAIRINGS);
+  const pairing = LOCKED_PAIRING;
   const personIntercept = gauss(0, 0.5);
   const startedAt = new Date(Date.UTC(2026, 8, 14 + Math.floor(i / 8), 9 + (i % 8), (i * 7) % 60)).toISOString();
 
@@ -207,9 +209,10 @@ draws.forEach((arm, i) => {
   const c5Raw = clamp7(trustInBrand1 + gauss(0, 0.5));
 
   const session: Session = {
-    schema: 4,
+    schema: 5,
     step: 'debrief',
     participantId: `sim-${String(i + 1).padStart(3, '0')}`,
+    groupCode: isRandomFallback ? '' : CODE_FOR_ARM[arm],
     isDebug: false,
     assignment: { source, arm, order, pairing },
     blocks: {
@@ -254,14 +257,14 @@ draws.forEach((arm, i) => {
 
 // Two dropouts and one debug row, so the exclusion logic in the R script is
 // exercised by the synthetic data rather than only by real fieldwork.
-for (const [pid, status, debug] of [['sim-046', 'partial', false], ['sim-047', 'partial', false], ['sim-999', 'complete', true]] as const) {
+for (const [pid, status, debug] of [['sim-046', 'incomplete', false], ['sim-047', 'incomplete', false], ['sim-999', 'complete', true]] as const) {
   const base = { ...rows[0]! };
   base['participant_id'] = pid;
   base['status'] = status;
   base['is_debug'] = debug ? 'TRUE' : 'FALSE';
-  base['abandoned'] = status === 'partial' ? 'TRUE' : 'FALSE';
-  base['abandoned_at_step'] = status === 'partial' ? 'block_1' : '';
-  if (status === 'partial') {
+  base['abandoned'] = status === 'incomplete' ? 'TRUE' : 'FALSE';
+  base['abandoned_at_step'] = status === 'incomplete' ? 'block_1' : '';
+  if (status === 'incomplete') {
     for (const name of COLUMN_NAMES) if (name.startsWith('exp_')) base[name] = '';
     base['exp_accepts'] = '';
     base['diff_accepts'] = '';

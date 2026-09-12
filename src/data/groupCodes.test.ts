@@ -6,9 +6,10 @@
  */
 import { afterEach, describe, expect, it } from 'vitest';
 import {
-  GROUP_CODES, lookupGroupCode, normalizeGroupCode, randomArm, randomOrderAndPairing,
+  GROUP_CODES, lookupGroupCode, normalizeGroupCode, randomArm, randomOrder,
 } from './groupCodes';
-import { ARMS } from './conditions';
+import { ARMS, BLOCK_ORDERS } from './conditions';
+import { brandForBlock } from '../machine/types';
 
 describe('GROUP_CODES table', () => {
   it('has exactly three codes: one per arm', () => {
@@ -87,11 +88,32 @@ describe('random fallback never stacks on one condition', () => {
     expect(randomArm()).toBe(ARMS[2]);
   });
 
-  it('order and pairing are also drawn per participant, not fixed', () => {
+  it('order is still drawn per participant, not fixed', () => {
     Math.random = () => 0;
-    const low = randomOrderAndPairing();
+    expect(randomOrder()).toBe(BLOCK_ORDERS[0]);
     Math.random = () => 0.99;
-    const high = randomOrderAndPairing();
-    expect(low).not.toEqual(high);
+    expect(randomOrder()).toBe(BLOCK_ORDERS[1]);
+  });
+});
+
+/**
+ * ENFORCEMENT for change_spec_v4_2 Part 1. Brand is now confounded with
+ * condition on purpose; what must NOT happen is the confound quietly
+ * reversing direction for some participants, which would mix the two brands'
+ * data together under one label and be undetectable in the output.
+ */
+describe('brand pairing is locked', () => {
+  it('Aurevella always carries the neutral pop-ups, Maison Veloure the experimental ones', () => {
+    expect(brandForBlock('locked_aurevella_neutral', 'neutral')).toBe('aurevella');
+    expect(brandForBlock('locked_aurevella_neutral', 'exp')).toBe('veloure');
+  });
+
+  it('holds regardless of how the pairing argument is threaded through', () => {
+    // The parameter survives only so call sites still read as pairing-derived.
+    // There is exactly one legal value, so this cannot vary by participant.
+    for (let i = 0; i < 50; i++) {
+      expect(brandForBlock('locked_aurevella_neutral', 'neutral')).toBe('aurevella');
+      expect(brandForBlock('locked_aurevella_neutral', 'exp')).toBe('veloure');
+    }
   });
 });

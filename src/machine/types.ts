@@ -182,6 +182,13 @@ export interface Session {
   schema: number;
   step: Step;
   participantId: string;
+  /**
+   * The raw `?g=` value exactly as received, or '' when absent or
+   * unrecognised (change_spec_v4_2 Part 2). Recorded in the dataset so a row
+   * documents which link produced it; still never rendered in participant-
+   * facing UI, which is what the "never show the code" rule was protecting.
+   */
+  groupCode: string;
   isDebug: boolean;
   assignment: Assignment | null;
   /** Null until assignment resolves. Keyed by condition. */
@@ -202,9 +209,25 @@ export function blockAtPosition(order: BlockOrder, position: 1 | 2): BlockKey {
   return position === 1 ? 'exp' : 'neutral';
 }
 
-/** Which brand carries which condition, given the pairing counterbalance. */
-export function brandForBlock(pairing: BrandPairing, key: BlockKey): BrandId {
-  const neutralBrand: BrandId = pairing === 'aurevella_neutral' ? 'aurevella' : 'veloure';
-  if (key === 'neutral') return neutralBrand;
-  return neutralBrand === 'aurevella' ? 'veloure' : 'aurevella';
+/**
+ * Which brand carries which condition. Fixed as of change_spec_v4_2 Part 1:
+ * Aurevella is always neutral, Maison Veloure is always experimental. The
+ * `pairing` argument is retained so every call site still reads as
+ * pairing-derived, but it has one possible value.
+ */
+export function brandForBlock(_pairing: BrandPairing, key: BlockKey): BrandId {
+  return key === 'neutral' ? 'aurevella' : 'veloure';
 }
+
+/** Which of the four pop-ups this one is, in the order the session showed them. */
+export function popupPosition(order: BlockOrder, key: BlockKey, popup: PopupKey): 1 | 2 | 3 | 4 {
+  const first = blockAtPosition(order, 1);
+  const blockOffset = key === first ? 0 : 2;
+  return (blockOffset + (popup === 'p1' ? 1 : 2)) as 1 | 2 | 3 | 4;
+}
+
+/** What each pop-up asks for. p1 = email at checkout, p2 = a follow after purchase. */
+export const POPUP_ASK: Record<PopupKey, 'email' | 'social_follow'> = {
+  p1: 'email',
+  p2: 'social_follow',
+};

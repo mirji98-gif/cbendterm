@@ -102,7 +102,7 @@ On Vercel, add `VITE_ENDPOINT_URL` under *Settings → Environment Variables* an
 **7. Check it.** Open `<YOUR_EXEC_URL>?action=ping` in a browser. You should see:
 
 ```json
-{"ok":true,"columns":129,"slots":52}
+{"ok":true,"columns":144,"slots":52}
 ```
 
 If `columns` does not match what `npm run gen` printed, you pasted a stale `Code.gs`. (`slots` is
@@ -148,15 +148,17 @@ random path rather than failing loudly.
 ### Debug mode
 
 ```
-?debug=1                                    live event-log overlay, assignment from ?g= as normal
-?debug=1&arm=strong&order=exp_first         force a condition (overrides ?g=, if present)
-?debug=1&arm=mild&pairing=veloure_neutral   force the brand pairing too
+?debug=1                              live event-log overlay, assignment from ?g= as normal
+?debug=1&arm=strong&order=exp_first   force a condition (overrides ?g=, if present)
 ```
+
+There is no `?pairing=` flag any more — the pairing is fixed (v4.2 Part 1), so there is nothing
+to force.
 
 The overlay shows the assignment, the current step, the last 14 events with their timestamps, and
 both blocks' pop-up 1 / pop-up 2 choices and latencies. Every flag is inert without `debug=1`.
 Debug forcing takes priority over a group code — `?debug=1&g=k7m2&arm=strong` runs as `strong`, not
-`mild` — but `?debug=1&g=k7m2` alone (no `arm=`/`order=`/`pairing=`) resolves the group code
+`mild` — but `?debug=1&g=k7m2` alone (no `arm=`/`order=`) resolves the group code
 normally and just adds the overlay, which is the easiest way to sanity-check a link before sending
 it out.
 
@@ -170,9 +172,9 @@ out of the CSV on `is_debug`, or run `deleteDebugRows()`.
 https://<your-app>.vercel.app/?admin=1&key=<ADMIN_KEY>
 ```
 
-Completed vs target per arm, per-cell counterbalance counts (order × pairing, still meaningful —
-those are still drawn per participant, just no longer from a pre-generated sequence), abandonment
-rate, median duration, and a CSV download. Refreshes every 30 seconds. Check it on day 3 — that is
+Completed vs target per arm, per-cell counts by `order` (the only remaining per-participant draw —
+`pairing` is fixed, so the table is two cells, not four), abandonment rate, median duration, and a
+CSV download. Refreshes every 30 seconds. Check it on day 3 — that is
 when there is still time to push the link for whichever arm is falling behind.
 
 The key is enforced by the Apps Script, not the browser, so a wrong key returns nothing. The admin
@@ -282,7 +284,7 @@ src/
   data/items.ts                        THE RATED ITEMS (B1-B4) + downstream choice (B5), per brand
   data/awareness.ts                    the awareness check (screen 10)
   data/comparative.ts                  the comparative block + brand-relative recoding (screen 11)
-  data/columns.ts                      THE CSV CONTRACT — 129 columns (p1/p2 per pop-up)
+  data/columns.ts                      THE CSV CONTRACT — 144 columns (p1/p2 per pop-up)
   data/conditions.ts                   the four decline wordings + both pop-ups' invariant copy
   data/sequence.ts                     GENERATED — vestigial; kept only because Code.gs embeds it
   data/{brands,copy,config}.ts
@@ -302,10 +304,16 @@ write-up can state it rather than discover it. The ones that matter most:
 
 - **Group-code assignment** ([`change_spec_group_codes.md`](change_spec_group_codes.md), refined by
   [`change_spec_v4_final.md`](change_spec_v4_final.md)) replaces the pre-generated-sequence `assign`
-  endpoint with an opaque `?g=` code in each recruiting link that decodes to an arm. `order`/`pairing`
-  are drawn per participant with `Math.random()` instead of from the sequence — exact balance isn't
-  required for those, only that they vary. `slot` and (as of v4) `recruiter_id` are removed from the
+  endpoint with an opaque `?g=` code in each recruiting link that decodes to an arm. `order` is
+  drawn per participant with `Math.random()` instead of from the sequence — exact balance isn't
+  required for it, only that it varies. `slot` and (as of v4) `recruiter_id` are removed from the
   schema entirely.
+- **Locked brand pairing** ([`change_spec_v4_2_locked_pairing.md`](change_spec_v4_2_locked_pairing.md)
+  Part 1) removes the `pairing` draw: Aurevella carries the neutral pop-ups and Maison Veloure the
+  experimental ones for every participant, in all three arms. The `pairing` column stays in the
+  schema and writes the constant `locked_aurevella_neutral`, so the design is legible from the
+  dataset alone. This buys a cleaner brand→condition reading at the cost of confounding brand with
+  condition — see [Limitations](#limitations).
 - **Two pop-ups per brand** ([`change_spec_v4_final.md`](change_spec_v4_final.md) Part 2) replaces
   the original single, no-cost 15%-off pop-up, which put acceptance at ceiling and left no room for
   the manipulation to show a behavioural difference. Both new pop-ups attach a cost to accepting
@@ -322,6 +330,31 @@ write-up can state it rather than discover it. The ones that matter most:
 - **Checkpoint rows.** The app posts a partial row after consent and after each block, upserted by
   `participant_id`. A closed tab sends nothing, so without this `abandoned` would be `FALSE` for
   100% of the data.
+
+---
+
+## Limitations
+
+For the write-up. State it plainly rather than let it be found in the viva:
+
+> Brand-condition pairing was fixed rather than counterbalanced: Aurevella carried the neutral
+> pop-ups and Maison Veloure the experimental pop-ups for all participants. Brand identity is
+> therefore confounded with condition, and observed differences cannot be fully attributed to
+> decline-button wording alone. The two storefronts were matched on layout, palette luminance,
+> imagery, pricing and copy to minimise this, but it remains a limitation of the design.
+
+The matching is measured and documented at the top of [`src/data/brands.ts`](src/data/brands.ts).
+Three things could **not** be brought to equivalence, and belong in the same note if anyone asks:
+
+| What | Aurevella | Maison Veloure | Size of the gap |
+| --- | --- | --- | --- |
+| Accent HSL saturation | 31% | 16% | ~2× — an artefact of the HSL cylinder, not a perceptual difference. The accents are matched in CIELAB (both L\*=34, C\*=16; relative luminance 0.0801 vs 0.0805, 0.5% apart), and matching HSL saturation *and* CIE chroma simultaneously is not possible at usable chroma without collapsing both to near-grey. |
+| Brand-name length | "Aurevella", 9 chars | "Maison Veloure", 14 chars | 5 characters. Fixing it would mean renaming a brand that already appears in the awareness item, the debrief and the codebook. The name is not shown on the pop-up itself. |
+| Product imagery | inline SVG archetypes | inline SVG archetypes | Zero — the two catalogues render the *same six* SVG shapes, so "production value" cannot differ. This is only a limitation in that neither store uses photography, so the finding may not transfer to a photographic storefront. |
+
+Everything else — layout, categories, taglines, prices, product details, copy register, total
+product-name length (102 characters each side), button labels, tap targets — is identical or
+matched by construction.
 
 ---
 

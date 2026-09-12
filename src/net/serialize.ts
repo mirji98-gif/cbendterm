@@ -18,6 +18,7 @@ import { BRANDS } from '../data/brands';
 import { DECLINE_COPY, responseCode } from '../data/conditions';
 import { isAwarenessCorrect } from '../data/awareness';
 import { recodeBrandChoice, recodeComparativeScale, expBrandIsPositionTwo } from '../data/comparative';
+import { POPUP_ASK, popupPosition } from '../machine/types';
 import type { Session, BlockData, BlockKey, PopupResult } from '../machine/types';
 
 export type Row = Record<string, string | number>;
@@ -55,7 +56,14 @@ function popupColumns(session: Session, block: BlockData, popup: PopupPrefix, pr
   const p = (s: string) => `${prefix}_${popup}_${s}`;
   const pop: PopupResult = block[popup];
   const correct = awarenessCorrectByCondition(session, block.key);
+  const order = session.assignment?.order;
   return {
+    [p('brand')]: BRANDS[block.brandId].name,
+    [p('ask')]: POPUP_ASK[popup],
+    // Blank rather than guessed when assignment has not resolved yet, which
+    // only happens on a checkpoint row written before consent completed.
+    [p('position')]: order ? String(popupPosition(order, block.key, popup)) : '',
+
     [p('choice')]: str(pop.choice),
     [p('response_code')]: pop.choice ? responseCode(pop.choice, pop.latencyMs, correct) : '',
     [p('latency_ms')]: num(pop.latencyMs),
@@ -183,8 +191,8 @@ function boolFromZeroOne(v: 0 | 1 | null): boolean | null {
 }
 
 export interface SerializeOptions {
-  /** 'partial' for a checkpoint write, 'complete' for the final submit. */
-  status: 'partial' | 'complete';
+  /** 'incomplete' for a checkpoint write, 'complete' for the final submit. */
+  status: 'incomplete' | 'complete';
   /** Elapsed seconds from performance.now() deltas, never wall clock. */
   durationS: number;
 }
@@ -194,31 +202,37 @@ export function serializeSession(session: Session, opts: SerializeOptions): Row 
   const blocks = session.blocks;
 
   const row: Row = {
+    // ── session identity ──
     participant_id: session.participantId,
+    app_version: session.meta.appVersion,
     status: opts.status,
     is_debug: bool(session.isDebug),
-    app_version: session.meta.appVersion,
-
-    assignment_source: a ? a.source : '',
-    arm: a ? a.arm : '',
-    order: a ? a.order : '',
-    pairing: a ? a.pairing : '',
-    brand_neutral: blocks ? BRANDS[blocks.neutral.brandId].name : '',
-    brand_experimental: blocks ? BRANDS[blocks.exp.brandId].name : '',
-
     started_at: session.meta.startedAtIso,
     submitted_at: str(session.meta.submittedAtIso),
     received_at: '', // written server-side by the Apps Script
     duration_s: Math.round(opts.durationS * 10) / 10,
-
     device: session.meta.device,
     viewport: session.meta.viewport,
     dpr: session.meta.dpr,
     touch: bool(session.meta.touch),
-
-    abandoned: bool(opts.status === 'partial'),
-    abandoned_at_step: opts.status === 'partial' ? session.lastStepReached : '',
+    abandoned: bool(opts.status === 'incomplete'),
+    abandoned_at_step: opts.status === 'incomplete' ? session.lastStepReached : '',
     resumed_after_reload: bool(session.resumedAfterReload),
+
+    // ── condition identity ──
+    group_code: session.groupCode,
+    arm: a ? a.arm : '',
+    assignment_source: a ? a.source : '',
+    order: a ? a.order : '',
+    pairing: a ? a.pairing : '',
+    brand_neutral: blocks ? BRANDS[blocks.neutral.brandId].name : '',
+    brand_experimental: blocks ? BRANDS[blocks.exp.brandId].name : '',
+    // Read from the SAME constant the pop-up renders (via the block's stored
+    // declineLabel, which is itself DECLINE_COPY[condition]) — never a
+    // duplicate literal, which could drift and defeat the whole point of
+    // recording what the participant actually saw.
+    decline_text_neutral: blocks ? blocks.neutral.declineLabel : '',
+    decline_text_experimental: blocks ? blocks.exp.declineLabel : '',
   };
 
   for (const prefix of BLOCK_PREFIXES) {

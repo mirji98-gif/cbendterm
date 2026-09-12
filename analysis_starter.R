@@ -36,6 +36,61 @@ is_true <- function(x) !is.na(x) & toupper(as.character(x)) == "TRUE"
 num <- function(x) suppressWarnings(as.numeric(x))
 
 # ─────────────────────────────────────────────────────────────────────────────
+# 0. Integrity assertions (change_spec_v4_2 Part 4)
+# ─────────────────────────────────────────────────────────────────────────────
+# These stop the script rather than let it produce output from a contaminated
+# dataset. Both check invariants the app is supposed to guarantee: if either
+# fails, something wrote rows under a different design than the one you think
+# you ran, and every number below would be quietly wrong.
+cat("── Integrity assertions ────────────────────────────────\n")
+
+expected_pairing <- "locked_aurevella_neutral"
+pairings <- unique(raw$pairing[!is.na(raw$pairing) & raw$pairing != ""])
+if (length(pairings) != 1 || pairings[1] != expected_pairing) {
+  stop(sprintf(paste0(
+    "CONTAMINATED DATASET: `pairing` is not constant.\n",
+    "  found: %s\n",
+    "  expected every row to be '%s'.\n",
+    "  Brand pairing was locked in v4.2; more than one value means rows from\n",
+    "  different builds have been mixed into one sheet. Split them by\n",
+    "  app_version before analysing."),
+    paste(pairings, collapse = ", "), expected_pairing))
+}
+cat(sprintf("  pairing constant across all rows: '%s'\n", pairings[1]))
+
+# decline_text_experimental must correspond to arm, on every row. This is the
+# check that would have caught a wording bug shipping to real participants.
+DECLINE_FOR_ARM <- c(
+  mild     = "No thanks, I’ll pay full price",
+  strong   = "No thanks, I don’t need to save money",
+  autonomy = "Not now — I’ll decide later"
+)
+has_arm <- !is.na(raw$arm) & raw$arm != ""
+expected_text <- unname(DECLINE_FOR_ARM[raw$arm[has_arm]])
+actual_text <- raw$decline_text_experimental[has_arm]
+bad <- which(is.na(expected_text) | actual_text != expected_text)
+if (length(bad) > 0) {
+  cat("\n  Mismatched rows (participant_id | arm | decline_text_experimental):\n")
+  for (i in utils::head(bad, 10)) {
+    cat(sprintf("    %s | %s | %s\n", raw$participant_id[has_arm][i],
+                raw$arm[has_arm][i], actual_text[i]))
+  }
+  stop(sprintf(paste0(
+    "CONTAMINATED DATASET: decline_text_experimental does not match `arm` on %d row(s).\n",
+    "  The wording a participant saw is the manipulation. If it disagrees with\n",
+    "  the arm they were assigned, that row cannot be attributed to a condition."),
+    length(bad)))
+}
+cat(sprintf("  decline_text_experimental matches arm on all %d assigned rows\n", sum(has_arm)))
+
+neutral_texts <- unique(raw$decline_text_neutral[has_arm])
+if (length(neutral_texts) != 1 || neutral_texts[1] != "No thanks") {
+  stop(sprintf("CONTAMINATED DATASET: decline_text_neutral is not constant 'No thanks' (found: %s)",
+               paste(neutral_texts, collapse = ", ")))
+}
+cat("  decline_text_neutral is 'No thanks' on every row\n\n")
+
+# ─────────────────────────────────────────────────────────────────────────────
 # 1. Exclusions (see codebook §10). Each is reported, never silent.
 # ─────────────────────────────────────────────────────────────────────────────
 cat("── Exclusions ──────────────────────────────────────────\n")
@@ -57,7 +112,7 @@ d <- d[d$status == "complete", ]
 
 n_random <- sum(d$assignment_source == "random", na.rm = TRUE)
 if (n_random > 0) {
-  cat(sprintf("  ⚠ random-fallback assignments kept: %d — code was missing/mistyped, no recruiter attributed.\n", n_random))
+  cat(sprintf("  ⚠ random-fallback assignments kept: %d — code was missing or mistyped.\n", n_random))
   cat("    Report this count as a limitation; it is outside the intended 15/15/15 allocation.\n")
 }
 
@@ -88,7 +143,17 @@ cat(sprintf("\n  ANALYSIS SAMPLE: n = %d\n\n", nrow(d)))
 cat("── Cell counts ─────────────────────────────────────────\n")
 print(table(d$arm))
 cat("\nArm x order:\n"); print(table(d$arm, d$order))
-cat("\nArm x brand pairing:\n"); print(table(d$arm, d$pairing))
+
+# change_spec_v4_2 Part 4: NO BRAND-AS-FACTOR ANALYSIS.
+# Brand pairing is locked — Aurevella carried every neutral pop-up and Maison
+# Veloure every experimental one — so brand and condition are the same
+# variable wearing two names. Crossing them would produce a table with two
+# structurally empty cells and invite reading a "brand effect" that is just
+# the treatment effect relabelled. The v4.1 "Arm x brand pairing" table was
+# removed for exactly this reason; it is not an oversight.
+cat("\nBrand pairing: locked (Aurevella neutral / Maison Veloure experimental).\n")
+cat("  Brand is confounded with condition by design and cannot be modelled\n")
+cat("  separately. Report this as a limitation — see README.md.\n")
 shortfall <- ARM_TARGETS - table(factor(d$arm, levels = ARMS))
 if (any(shortfall > 0)) {
   cat("\n  Still needed: ",
@@ -202,6 +267,56 @@ cat("  Experimental pop-ups accepted, mean:\n")
 print(round(tapply(num(d$exp_accepts), d$arm, mean, na.rm = TRUE), 2))
 cat("  diff_accepts (exp - neutral), mean:\n")
 print(round(tapply(num(d$diff_accepts), d$arm, mean, na.rm = TRUE), 2))
+cat("\n")
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 3b. Acceptance with POSITION as a covariate (change_spec_v4_2 Part 4)
+# ─────────────────────────────────────────────────────────────────────────────
+# With four pop-ups per session, acceptance almost certainly declines across
+# the session through simple fatigue. Position is what separates that decline
+# from the condition effect: without it, an experimental pop-up that happened
+# to fall late looks like a wording effect. Reshape to one row per POP-UP so
+# position can enter the model at all.
+cat("── Acceptance by position (fatigue) and condition ──────\n")
+popup_rows <- do.call(rbind, lapply(BLOCK_PREFIXES, function(p) {
+  do.call(rbind, lapply(POPUP_PREFIXES, function(pop) {
+    col <- paste0(p, "_", pop)
+    data.frame(
+      participant_id = d$participant_id,
+      arm            = d$arm,
+      condition      = ifelse(p == "neutral", "neutral", "experimental"),
+      ask            = d[[paste0(col, "_ask")]],
+      position       = num(d[[paste0(col, "_position")]]),
+      accepted       = as.integer(d[[paste0(col, "_choice")]] == "accept"),
+      stringsAsFactors = FALSE
+    )
+  }))
+}))
+popup_rows <- popup_rows[!is.na(popup_rows$accepted) & !is.na(popup_rows$position), ]
+
+cat("\nAcceptance rate by position in the session (1-4):\n")
+print(round(tapply(popup_rows$accepted, popup_rows$position, mean), 3))
+cat("\nAcceptance rate by condition x position:\n")
+print(round(tapply(popup_rows$accepted, list(popup_rows$condition, popup_rows$position), mean), 3))
+cat("\nAcceptance rate by ask type (email at checkout vs follow after purchase):\n")
+print(round(tapply(popup_rows$accepted, popup_rows$ask, mean), 3))
+
+# Logistic model: does condition still predict acceptance once position is
+# controlled? position enters as a linear term — with only four levels there
+# is not enough data to justify treating it as a factor.
+fit <- tryCatch(
+  glm(accepted ~ condition + position + factor(arm), data = popup_rows, family = binomial()),
+  error = function(e) NULL
+)
+if (!is.null(fit)) {
+  cat("\nglm(accepted ~ condition + position + arm, binomial):\n")
+  co <- summary(fit)$coefficients
+  for (r in rownames(co)) {
+    cat(sprintf("   %-28s b=%7.3f  OR=%6.3f  p=%.3f\n", r, co[r, 1], exp(co[r, 1]), co[r, 4]))
+  }
+  cat("   Read `position` as the per-step fatigue slope: OR < 1 means each\n")
+  cat("   successive pop-up was less likely to be accepted regardless of arm.\n")
+}
 cat("\n")
 
 # ─────────────────────────────────────────────────────────────────────────────

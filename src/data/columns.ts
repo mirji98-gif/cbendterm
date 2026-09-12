@@ -64,33 +64,39 @@ const COMPARATIVE_SENTINELS: readonly ComparativeSentinel[] = [
   'both', 'neither', 'compare_further', 'dont_remember',
 ];
 
-// ── Session-level identification and metadata ─────────────────────────────
+// ── 1. Session identity (change_spec_v4_2 Part 2) ─────────────────────────
 const SESSION_COLUMNS: ColumnSpec[] = [
-  { name: 'participant_id', group: 'Session', type: 'string', description: 'Client-generated UUID, minted at consent. Upsert key — a checkpoint row and the final row share it.' },
-  { name: 'status', group: 'Session', type: 'enum', values: ['partial', 'complete'], description: 'complete = participant reached submit. partial = a checkpoint row that was never superseded, i.e. the participant dropped out.' },
-  { name: 'is_debug', group: 'Session', type: 'bool', description: 'TRUE for ?debug=1 sessions. Debug runs write real rows through the real code path; filter them out of every count and export.' },
-  { name: 'app_version', group: 'Session', type: 'string', description: 'Build identifier, so a mid-fieldwork change is detectable in the data.' },
+  { name: 'participant_id', group: 'Session identity', type: 'string', description: 'Client-generated UUID, minted at consent. Upsert key — a checkpoint row and the final row share it.' },
+  { name: 'app_version', group: 'Session identity', type: 'string', description: 'Build identifier, so a mid-fieldwork change is detectable in the data. 4.2.0 is the locked-pairing build.' },
+  { name: 'status', group: 'Session identity', type: 'enum', values: ['complete', 'incomplete'], description: 'complete = participant reached submit. incomplete = a checkpoint row that was never superseded, i.e. the participant dropped out. Never a silent partial row: every incomplete row also carries abandoned=TRUE and abandoned_at_step.' },
+  { name: 'is_debug', group: 'Session identity', type: 'bool', description: 'TRUE for ?debug=1 sessions. Debug runs write real rows through the real code path, so they are filterable rather than deletable-by-memory. Exclude them from every count.' },
+  { name: 'started_at', group: 'Session identity', type: 'iso8601', description: 'Wall clock at consent, UTC. Phone clocks can be skewed — do not compute durations from this.' },
+  { name: 'submitted_at', group: 'Session identity', type: 'iso8601', description: 'Wall clock at submit, UTC.' },
+  { name: 'received_at', group: 'Session identity', type: 'iso8601', description: 'Server-side receipt time, written by the Apps Script. Compare with submitted_at to detect device clock skew.' },
+  { name: 'duration_s', group: 'Session identity', type: 'float', description: 'Consent → submit, computed from performance.now() deltas rather than wall clock, so a device clock jump cannot corrupt it.' },
+  { name: 'device', group: 'Session identity', type: 'string', description: 'Full user-agent string. Needed to interpret timing: mobile jank makes latency noisy, and device class is the first thing to check when it does.' },
+  { name: 'viewport', group: 'Session identity', type: 'string', description: 'CSS pixel viewport at start, "WxH".' },
+  { name: 'dpr', group: 'Session identity', type: 'float', description: 'devicePixelRatio at session start. Together with viewport it reconstructs the physical size the participant actually saw the pop-up at.' },
+  { name: 'touch', group: 'Session identity', type: 'bool', description: 'TRUE if the device reported touch support. Press-dwell is near-meaningless when TRUE (no hover on touch).' },
+  { name: 'abandoned', group: 'Session identity', type: 'bool', description: 'TRUE when the row is a checkpoint that was never superseded by a completed submit. Session-level because a participant abandons a session, not a pop-up. See the per-pop-up `*_abandoned` columns for which specific pop-ups were never reached.' },
+  { name: 'abandoned_at_step', group: 'Session identity', type: 'string', description: 'Last step reached before the session stopped, as of the moment this row was written. Blank for completed sessions.' },
+  { name: 'resumed_after_reload', group: 'Session identity', type: 'bool', description: 'TRUE if the participant reloaded mid-session and state was restored from localStorage. When the interrupted step was a pop-up, confirmation or continuation screen, that pop-up’s timing fields are NULL by design — never re-measured, because a re-rendered pop-up produces a clean-looking but meaningless latency.' },
+];
 
-  { name: 'assignment_source', group: 'Assignment', type: 'enum', values: ['group_code', 'random', 'debug'], description: "group_code = arm decoded from a valid ?g= link. random = the code was missing or unrecognised, so the client picked an arm uniformly at random (never a fixed default). debug = forced via ?debug=1." },
-  { name: 'arm', group: 'Assignment', type: 'enum', values: ['mild', 'strong', 'autonomy'], description: 'Between-subjects framing arm. Comes from the recruiting link (change_spec_v4_final.md), not from a recruiter — v4 drops the recruiter dimension entirely.' },
-  { name: 'order', group: 'Assignment', type: 'enum', values: ['neutral_first', 'exp_first'], description: 'Presentation order counterbalance. Also determines which brand is "Brand 1" / "Brand 2" in the comparative block.' },
-  { name: 'pairing', group: 'Assignment', type: 'enum', values: ['aurevella_neutral', 'veloure_neutral'], description: 'Brand-condition pairing counterbalance: which brand carried the neutral pop-up.' },
-  { name: 'brand_neutral', group: 'Assignment', type: 'string', description: 'Brand that showed the neutral pop-ups.' },
-  { name: 'brand_experimental', group: 'Assignment', type: 'string', description: 'Brand that showed the experimental (arm) pop-ups. This is `exp_brand` in the recoding rules below.' },
-
-  { name: 'started_at', group: 'Timing', type: 'iso8601', description: 'Wall clock at consent, UTC. Phone clocks can be skewed — do not compute durations from this.' },
-  { name: 'submitted_at', group: 'Timing', type: 'iso8601', description: 'Wall clock at submit, UTC.' },
-  { name: 'received_at', group: 'Timing', type: 'iso8601', description: 'Server-side receipt time, written by the Apps Script. Compare with submitted_at to detect device clock skew.' },
-  { name: 'duration_s', group: 'Timing', type: 'float', description: 'Consent → submit, computed from performance.now() deltas rather than wall clock, so a device clock jump cannot corrupt it.' },
-
-  { name: 'device', group: 'Environment', type: 'string', description: 'Full user-agent string. Needed to interpret timing: mobile jank makes latency noisy, and device class is the first thing to check when it does.' },
-  { name: 'viewport', group: 'Environment', type: 'string', description: 'CSS pixel viewport at start, "WxH".' },
-  { name: 'dpr', group: 'Environment', type: 'float', description: 'devicePixelRatio at session start. Together with viewport it reconstructs the physical size the participant actually saw the pop-up at.' },
-  { name: 'touch', group: 'Environment', type: 'bool', description: 'TRUE if the device reported touch support. Press-dwell is near-meaningless when TRUE (no hover on touch).' },
-
-  { name: 'abandoned', group: 'Attrition', type: 'bool', description: 'TRUE when the row is a checkpoint that was never superseded by a completed submit. Session-level because per-block abandonment is not identifiable — a participant abandons a session, not a pop-up. See the per-pop-up `*_abandoned` columns below for which specific pop-ups were never reached.' },
-  { name: 'abandoned_at_step', group: 'Attrition', type: 'string', description: 'Last step reached before the session stopped. Blank for completed sessions.' },
-  { name: 'resumed_after_reload', group: 'Attrition', type: 'bool', description: 'TRUE if the participant reloaded mid-session and state was restored from localStorage. When the interrupted step was a pop-up, confirmation or continuation screen, that pop-up’s timing fields are NULL by design — never re-measured, because a re-rendered pop-up produces a clean-looking but meaningless latency.' },
+// ── 2. Condition identity ─────────────────────────────────────────────────
+// Every row must be reconstructable cold, without the code or an external
+// mapping: which link, which arm, which order, which brand, and the literal
+// strings the participant actually read.
+const CONDITION_COLUMNS: ColumnSpec[] = [
+  { name: 'group_code', group: 'Condition identity', type: 'enum', values: ['k7m2', 'p6hd', 'n1ls', ''], description: 'The raw ?g= value as received, when it decoded to an arm. Empty when the link carried no code or an unrecognised one — in which case assignment_source is "random". Recorded in the dataset only; never rendered anywhere a participant could see it.' },
+  { name: 'arm', group: 'Condition identity', type: 'enum', values: ['mild', 'strong', 'autonomy'], description: 'Between-subjects framing arm, decoded from the recruiting link.' },
+  { name: 'assignment_source', group: 'Condition identity', type: 'enum', values: ['group_code', 'random', 'debug'], description: 'group_code = arm decoded from a valid ?g= link. random = the code was missing or unrecognised, so the client picked an arm uniformly at random (never a fixed default). debug = forced via ?debug=1, which also sets is_debug.' },
+  { name: 'order', group: 'Condition identity', type: 'enum', values: ['neutral_first', 'exp_first'], description: 'Which store the participant visited first. Randomised per session. Also determines which brand is "Brand 1" / "Brand 2" in the comparative block.' },
+  { name: 'pairing', group: 'Condition identity', type: 'enum', values: ['locked_aurevella_neutral'], description: 'Brand-condition pairing. CONSTANT BY DESIGN as of change_spec_v4_2: Aurevella always carried the neutral pop-ups and Maison Veloure the experimental ones. Written on every row so the dataset documents the design rather than leaving it to be inferred. Brand is therefore confounded with condition — see README limitations.' },
+  { name: 'brand_neutral', group: 'Condition identity', type: 'string', description: 'Brand that showed the neutral pop-ups. Always Aurevella.' },
+  { name: 'brand_experimental', group: 'Condition identity', type: 'string', description: 'Brand that showed the experimental (arm) pop-ups. Always Maison Veloure. This is `exp_brand` in the recoding rules below.' },
+  { name: 'decline_text_neutral', group: 'Condition identity', type: 'string', description: 'The literal decline-button string shown on both neutral pop-ups, written from the same constant the pop-up renders. Records what the participant actually saw rather than a label pointing at code that may since have changed — if a wording bug ever ships, this column is how you find out.' },
+  { name: 'decline_text_experimental', group: 'Condition identity', type: 'string', description: 'The literal decline-button string shown on both experimental pop-ups, written from the same constant the pop-up renders. Must correspond to `arm` on every row; analysis_starter.R asserts this and refuses to run if it does not.' },
 ];
 
 // ── Once-per-BLOCK behavioural columns (not per pop-up) ────────────────────
@@ -112,6 +118,12 @@ const BLOCK_LEVEL: FieldSpec[] = [
 
 // ── Per-POP-UP behavioural columns (p1 = checkout, p2 = order confirmation) ─
 const POPUP_LEVEL: FieldSpec[] = [
+  // change_spec_v4_2 Part 2: three descriptive columns so each pop-up is
+  // interpretable on its own, without reconstructing it from arm + order.
+  { suffix: 'brand', type: 'enum', values: ['Aurevella', 'Maison Veloure'], description: 'Which store showed this pop-up. Fixed by condition as of v4.2 — Aurevella for the neutral pair, Maison Veloure for the experimental pair.' },
+  { suffix: 'ask', type: 'enum', values: ['email', 'social_follow'], description: 'What this pop-up asked for in exchange for the discount: an email address at checkout (p1) or a social follow after purchase (p2). Neither is ever actually collected.' },
+  { suffix: 'position', type: 'enum', values: ['1', '2', '3', '4'], description: 'Where this pop-up fell in the session, 1-4. Derived from `order`. THIS IS WHAT LETS YOU TEST FATIGUE: with four pop-ups, acceptance very likely declines across the session, and without position that decline cannot be separated from condition.' },
+
   { suffix: 'choice', type: 'enum', values: ['accept', 'decline_button', 'close_x', 'backdrop', 'timeout'], description: 'How this pop-up was resolved. `timeout` = no committed action within the pop-up timeout (45s).' },
   { suffix: 'response_code', type: 'enum', values: ['comply', 'resist', 'avoid', 'ignore'], description: 'Derived coding. Recomputed in analysis_starter.R from choice + latency + awareness so the Ignore threshold can be re-tuned; the stored value uses 1500 ms.' },
   { suffix: 'latency_ms', type: 'float', description: 'This pop-up fully rendered → first committed action. A primary behavioural DV. NULL means data loss, not "no response".' },
@@ -180,14 +192,18 @@ function blockSelfReportColumns(prefix: BlockPrefix): ColumnSpec[] {
       type: 'int',
       description: 'Ordinal recode of b5_raw: buy=3, compare=2, competitor=1, avoid=0, not_sure=blank. Feeds diff_b5.',
     },
-    {
-      name: `${prefix}_b6_open`,
-      group: `Self-report — ${label} block`,
-      type: 'string',
-      description: 'Optional open-ended, asked once per brand. Blank = skipped, which is always allowed.',
-    },
   ];
 }
+
+// ── Open-ended, grouped together near the end (change_spec_v4_2 Part 3) ────
+// Free text is wide and irregular; keeping it out of the numeric blocks makes
+// the Sheet readable, and keeping the three together makes them easy to
+// read (or strip) in one pass.
+const OPEN_ENDED_COLUMNS: ColumnSpec[] = [
+  { name: 'neutral_b6_open', group: 'Open-ended', type: 'string', description: 'Optional open-ended for the neutral brand, asked once per brand. Blank = skipped, which is always allowed.' },
+  { name: 'exp_b6_open', group: 'Open-ended', type: 'string', description: 'Optional open-ended for the experimental brand, asked once per brand. Blank = skipped, which is always allowed.' },
+  { name: 'c6_open', group: 'Open-ended', type: 'string', description: 'Optional open-ended from the comparative block: the biggest difference noticed between the two experiences. Blank = skipped.' },
+];
 
 const DIFF_COLUMNS: ColumnSpec[] = [
   ...RATED_ITEMS.map((item) => ({
@@ -226,7 +242,6 @@ const COMPARATIVE_COLUMNS: ColumnSpec[] = [
   { name: 'c3_raw', group: 'Comparative', type: 'int', scale: '1 = much less … 4 = about the same … 7 = much more', description: 'Raw answer: trust in Brand 1 (position 1) compared with Brand 2 (position 2). NOT yet relative to condition — see c3_recoded.' },
   { name: 'c4_raw', group: 'Comparative', type: 'enum', values: [...BRAND_IDS, 'compare_further', 'neither'], description: 'Raw answer: which brand the participant would choose for their next purchase.' },
   { name: 'c5_raw', group: 'Comparative', type: 'int', scale: '1 = much worse … 4 = about the same … 7 = much better', description: 'Raw answer: overall experience with Brand 1 compared with Brand 2. NOT yet relative to condition — see c5_recoded.' },
-  { name: 'c6_open', group: 'Comparative', type: 'string', description: 'Optional open-ended: biggest difference noticed between the two experiences. Blank = skipped.' },
 
   { name: 'c1_exp_more_manipulative', group: 'Comparative — recoded', type: 'bool', description: 'c1_raw == brand_experimental. Blank if c1_raw is "dont_remember".' },
   { name: 'c2_trust_exp_more', group: 'Comparative — recoded', type: 'bool', description: 'c2_raw == brand_experimental. "Both"/"neither" recode to FALSE per the instrument\'s literal rule, not blank.' },
@@ -245,22 +260,37 @@ const END_COLUMNS: ColumnSpec[] = [
   { name: 'gender', group: 'Demographics', type: 'enum', values: ['woman', 'man', 'non_binary', 'prefer_not'], description: 'Self-reported gender, including a prefer-not-to-say option. Covariate only; the design is not powered to test gender differences at this sample size.' },
   { name: 'occupation', group: 'Demographics', type: 'enum', values: ['student', 'working', 'both', 'other'], description: 'Student / working status.' },
 
-  { name: 'event_log_json', group: 'Raw', type: 'json', description: 'Full ordered event log, every entry stamped with performance.now(). This is the audit trail: if a derived timing column looks wrong, the truth is in here.' },
 ];
 
-/** THE canonical column order. Everything downstream reads this. */
+const EVENT_LOG_COLUMN: ColumnSpec = {
+  name: 'event_log_json',
+  group: 'Raw',
+  type: 'json',
+  description: 'Full ordered event log, every entry stamped with performance.now(). This is the audit trail: if a derived timing column looks wrong, the truth is in here. Last column by design — it is very wide and would otherwise obstruct reading the Sheet.',
+};
+
+/**
+ * THE canonical column order. Everything downstream reads this.
+ *
+ * change_spec_v4_2 Part 3 fixes the grouping: session identity → condition
+ * identity → per-pop-up behaviour → self-report → derived → open-ended →
+ * event log last.
+ */
 export const COLUMNS: readonly ColumnSpec[] = [
   ...SESSION_COLUMNS,
+  ...CONDITION_COLUMNS,
   ...BLOCK_PREFIXES.flatMap((p) => [
     ...blockLevelColumns(p),
     ...POPUP_PREFIXES.flatMap((popup) => popupColumns(p, popup)),
-    ...blockSelfReportColumns(p),
   ]),
-  ...DIFF_COLUMNS,
-  ...ACCEPTS_COLUMNS,
+  ...BLOCK_PREFIXES.flatMap((p) => blockSelfReportColumns(p)),
   ...AWARENESS_COLUMNS,
   ...COMPARATIVE_COLUMNS,
   ...END_COLUMNS,
+  ...DIFF_COLUMNS,
+  ...ACCEPTS_COLUMNS,
+  ...OPEN_ENDED_COLUMNS,
+  EVENT_LOG_COLUMN,
 ];
 
 export const COLUMN_NAMES: readonly string[] = COLUMNS.map((c) => c.name);

@@ -281,6 +281,52 @@ async function main() {
     check("assignment_source is 'group_code'", get('assignment_source') === 'group_code');
     check("arm is 'strong', deterministically from the code (not random)", get('arm') === 'strong');
 
+    // ---- change_spec_v4_2_locked_pairing.md -------------------------------
+    // Every row must be readable cold: the design, the literal strings shown,
+    // and where each pop-up sat in the session, without consulting the code.
+    check('app_version is 4.2.0', get('app_version') === '4.2.0');
+    check('group_code logs the raw ?g= value as received', get('group_code') === 'p6hd');
+    check("pairing is the locked constant", get('pairing') === 'locked_aurevella_neutral');
+    check('brand_neutral is Aurevella (pairing is locked, not drawn)', get('brand_neutral') === 'Aurevella');
+    check('brand_experimental is Maison Veloure', get('brand_experimental') === 'Maison Veloure');
+    check("decline_text_neutral is the literal 'No thanks'", get('decline_text_neutral') === 'No thanks');
+    check('decline_text_experimental is the strong arm\'s literal string',
+      get('decline_text_experimental') === 'No thanks, I don\u2019t need to save money',
+      `got "${get('decline_text_experimental')}"`);
+    check('decline_text_* match the per-block labels written by the pop-up',
+      get('decline_text_neutral') === get('neutral_decline_label')
+      && get('decline_text_experimental') === get('exp_decline_label'));
+
+    {
+      const positions = ['neutral_p1', 'neutral_p2', 'exp_p1', 'exp_p2'].map((c) => get(`${c}_position`));
+      check('the four *_position values are 1-4 with no duplicates',
+        [...positions].sort().join(',') === '1,2,3,4', `got ${positions.join(',')}`);
+      for (const [col, ask] of [['neutral_p1', 'email'], ['neutral_p2', 'social_follow'],
+                                ['exp_p1', 'email'], ['exp_p2', 'social_follow']]) {
+        check(`${col}_ask is ${ask}`, get(`${col}_ask`) === ask, `got "${get(`${col}_ask`)}"`);
+      }
+      check('per-pop-up *_brand follows the locked pairing',
+        get('neutral_p1_brand') === 'Aurevella' && get('neutral_p2_brand') === 'Aurevella'
+        && get('exp_p1_brand') === 'Maison Veloure' && get('exp_p2_brand') === 'Maison Veloure');
+    }
+
+    {
+      // "No null identifier fields" — a blank in any of these makes the row
+      // uninterpretable on its own, which is the whole point of Part 2.
+      const IDENTITY = [
+        'participant_id', 'app_version', 'status', 'is_debug', 'started_at', 'submitted_at',
+        'duration_s', 'device', 'viewport', 'group_code', 'arm', 'assignment_source', 'order',
+        'pairing', 'brand_neutral', 'brand_experimental', 'decline_text_neutral',
+        'decline_text_experimental',
+      ];
+      const missing = IDENTITY.filter((c) => header.indexOf(c) === -1);
+      check('every identifier column exists in the header', missing.length === 0, `missing: ${missing.join(', ')}`);
+      const empty = IDENTITY.filter((c) => !get(c));
+      check('no identifier field is null on a complete row', empty.length === 0, `empty: ${empty.join(', ')}`);
+    }
+
+    check('event_log_json is the last column', header[header.length - 1] === 'event_log_json');
+
     for (const p of ['neutral', 'exp']) {
       for (const pop of ['p1', 'p2']) {
         const col = `${p}_${pop}`;

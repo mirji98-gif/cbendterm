@@ -7,7 +7,7 @@ pop-up appears, and the only thing that changes between participants is the word
 decline button. It logs how they respond, questions them, and debriefs them. This document is
 what exists, why it's built the way it is, and what's still open.
 
-**Three changes have landed since this app was first built**, each with its own spec doc, each a
+**Five changes have landed since this app was first built**, each with its own spec doc, each a
 patch rather than a rebuild:
 
 - [`Instrument_v2.md`](Instrument_v2.md) replaces the original 36-items-per-block battery with five
@@ -20,16 +20,24 @@ patch rather than a rebuild:
   original single, no-cost 15%-off pop-up put acceptance at ceiling, leaving no room for the
   manipulation to show a behavioural difference — and redesigns the storefront to read as a real
   quiet-premium D2C store rather than a prototype.
+- [`change_spec_v4_1_popup_copy.md`](change_spec_v4_1_popup_copy.md) (v4.1) moves the *ask* into
+  the pop-up headline at headline weight, so the cost of accepting registers before the tap
+  rather than sitting in grey subtext under the discount.
+- [`change_spec_v4_2_locked_pairing.md`](change_spec_v4_2_locked_pairing.md) (v4.2, current)
+  **locks the brand pairing** — Aurevella neutral, Maison Veloure experimental, always — and makes
+  every row self-describing (`group_code`, `status`, the literal decline strings shown, and
+  `brand`/`ask`/`position` per pop-up). See "The counterbalancing" below for what that costs.
 
 If you're reading `PRD_confirmshaming_experiment_app.md` too, treat those sections as historical.
 
 | | |
 | --- | --- |
 | Target N | 45 (15 / 15 / 15 per arm) — see the counterbalancing section for a wrinkle |
-| CSV columns | 129 (one row per person; two pop-ups × two blocks now carry their own behavioural columns) |
+| Brand ↔ condition | **Locked** — Aurevella neutral, Maison Veloure experimental (v4.2). Confounded by design; see Limitations in the README |
+| CSV columns | 144 (one row per person; two pop-ups × two blocks now carry their own behavioural columns) |
 | Rated items | 8 (4 × two blocks), plus a downstream choice, awareness and a comparative block |
 | Pop-ups per session | 4 (2 per brand: checkout + order confirmation) |
-| App version | `4.0.0` |
+| App version | `4.2.0` |
 | Bundle | ~70 kB gzipped, plus one external request (Google Fonts) |
 
 ---
@@ -274,11 +282,22 @@ that's what will catch you.
 Arm is decoded from the recruiting link's group code (`?g=<code>`, `src/data/groupCodes.ts`), not
 assigned by the app. **Three codes exist as of v4 — one per arm, no recruiter dimension** (v3 had
 twelve: four recruiters × three arms, plus a `recruiter_id` column — `change_spec_v4_final.md`
-Part 1 dropped that entirely). Order (neutral-first vs experimental-first) and brand pairing are
-**not** counterbalanced by a sequence any more: each is drawn with a plain `Math.random()` per
-participant, because exact per-cell balance on these nuisance factors was judged not worth
-reintroducing server-side state for. A participant who consents and then drops doesn't burn a
-reserved slot — there's nothing to reserve — so no insurance-slot bookkeeping is needed either.
+Part 1 dropped that entirely). Order (neutral-first vs experimental-first) is **not**
+counterbalanced by a sequence any more: it is drawn with a plain `Math.random()` per participant,
+because exact per-cell balance on that nuisance factor was judged not worth reintroducing
+server-side state for. A participant who consents and then drops doesn't burn a reserved slot —
+there's nothing to reserve — so no insurance-slot bookkeeping is needed either.
+
+**Brand pairing is no longer a factor at all.** `change_spec_v4_2_locked_pairing.md` Part 1 fixed
+it: Aurevella always carries the neutral pop-ups, Maison Veloure always the experimental ones, in
+all three arms. The `pairing` column survives in the schema and writes the constant
+`locked_aurevella_neutral`, so the dataset documents its own design instead of leaving a future
+reader to infer it. The cost is that **brand is now perfectly confounded with condition** — every
+experimental score is also a Maison Veloure score. The compensating work (accents matched in
+CIELAB, product names matched in convention and total length, prices/details/layout already
+identical) is documented at the top of `src/data/brands.ts`, and the residual gaps are tabulated
+under "Limitations" in the README. `analysis_starter.R` refuses to run on a dataset where
+`pairing` is not constant, or where `decline_text_experimental` disagrees with `arm`.
 
 The target N is 45 (15/15/15 per arm) — with only one link per arm now, there's no recruiter-split
 arithmetic wrinkle left; just send that arm's link until it's full. `ARM_TARGETS` in
@@ -305,7 +324,8 @@ quietly revert them.
 | Continuation "6s or until action" | Live at 0s, auto-advance at 8s, censoring flagged | Ambiguous between a floor and a ceiling, which give different dwell distributions |
 | `abandon` code, no threshold | `timeout` at 45s | Without a timeout a frozen participant loses the entire row |
 | ~6 minutes (v1: stated 8–10 due to item load) | Consent states ~6 minutes again | v2's much shorter instrument (~23 items vs ~80) makes the original estimate realistic |
-| Arm assigned by the app (pre-generated sequence via `?action=assign`) | Arm decoded from the link's `?g=` group code (one code per arm as of v4); order/pairing drawn per participant | `change_spec_group_codes.md` / `change_spec_v4_final.md`: link-based control gets a clean split without server-side state |
+| Arm assigned by the app (pre-generated sequence via `?action=assign`) | Arm decoded from the link's `?g=` group code (one code per arm as of v4); `order` drawn per participant, `pairing` locked as of v4.2 | `change_spec_group_codes.md` / `change_spec_v4_final.md`: link-based control gets a clean split without server-side state |
+| Brand ↔ condition counterbalanced across participants | Locked: Aurevella neutral, Maison Veloure experimental, always | `change_spec_v4_2_locked_pairing.md` Part 1: a fixed pairing is legible from the dataset and removes a nuisance factor, at the cost of confounding brand with condition — mitigated by matching the two storefronts, and stated as a limitation rather than hidden |
 | One pop-up per brand | Two pop-ups per brand (checkout + order confirmation), same decline wording within a brand | `change_spec_v4_final.md` Part 2: the original no-cost 15%-off pop-up put acceptance at ceiling, leaving no room for the manipulation to show a behavioural difference |
 
 ---
@@ -358,7 +378,7 @@ Good places to pick up, roughly in the order they block progress.
 > against a faithful local sandbox running the real `Code.gs`, but *not* against Google's actual
 > servers. The `text/plain` CORS-simple POST is a well-established Apps Script pattern, but it
 > hasn't been confirmed on a live deployment. Follow the README, then open
-> `<EXEC_URL>?action=ping` — it should return `{"ok":true,"columns":129,"slots":52}` (`slots` is
+> `<EXEC_URL>?action=ping` — it should return `{"ok":true,"columns":144,"slots":52}` (`slots` is
 > vestigial — see "The counterbalancing" above). If it doesn't, `?action=verify&pid=` is already
 > wired as a fallback path.
 
@@ -420,7 +440,7 @@ src/data/
   awareness.ts                         the awareness check (screen 10)
   comparative.ts                       the comparative block + brand-relative recoding (screen 11)
   groupCodes.ts                        the ?g= code → arm table (3 codes, v4). Never ship this to participants.
-  columns.ts                           the 129-column CSV contract (p1/p2 per pop-up)
+  columns.ts                           the 144-column CSV contract (p1/p2 per pop-up)
   conditions.ts                        the four wordings + both pop-ups' invariant copy
   sequence.ts                          GENERATED, VESTIGIAL — the old 52-slot assignment sequence, unused
   brands.ts copy.ts config.ts

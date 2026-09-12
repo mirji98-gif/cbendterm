@@ -12,13 +12,25 @@
  *   mild      4 / 3 / 3 / 3  (n=13)
  *   strong    3 / 4 / 3 / 3  (n=13)
  *   autonomy  3 / 3 / 4 / 4  (n=14)
+ *
+ * VESTIGIAL as of change_spec_v4_2. Nothing in the live app reads this: arm
+ * comes from the recruiting link, order is drawn per participant, and brand
+ * pairing is locked to Aurevella-neutral. It survives only because
+ * apps-script/Code.gs embeds it and the round-trip test exercises the unused
+ * assign endpoint against the real script. The types below are deliberately
+ * local — this file must not depend on the live experimental types.
  */
-import type { Slot } from './conditions';
-
 export const SEQUENCE_SEED = 20260910;
 export const DESIGN_N = 40;
 
-export const ASSIGNMENT_SEQUENCE: readonly Slot[] = [
+export interface LegacySlot {
+  slot: number;
+  arm: 'mild' | 'strong' | 'autonomy';
+  order: 'neutral_first' | 'exp_first';
+  pairing: 'aurevella_neutral' | 'veloure_neutral';
+}
+
+export const ASSIGNMENT_SEQUENCE: readonly LegacySlot[] = [
   { slot: 0, arm: 'autonomy', order: 'neutral_first', pairing: 'veloure_neutral' },
   { slot: 1, arm: 'autonomy', order: 'neutral_first', pairing: 'veloure_neutral' },
   { slot: 2, arm: 'strong', order: 'neutral_first', pairing: 'veloure_neutral' },
@@ -71,12 +83,4 @@ export const ASSIGNMENT_SEQUENCE: readonly Slot[] = [
   { slot: 49, arm: 'mild', order: 'exp_first', pairing: 'aurevella_neutral' },
   { slot: 50, arm: 'strong', order: 'neutral_first', pairing: 'aurevella_neutral' },
   { slot: 51, arm: 'mild', order: 'neutral_first', pairing: 'aurevella_neutral' },
-] as const;
-
-/** Counterbalance cell index (0-3) for a slot, for the admin view. */
-export const CELL_LABELS: readonly string[] = [
-  'neutral_first/aurevella_neutral',
-  'neutral_first/veloure_neutral',
-  'exp_first/aurevella_neutral',
-  'exp_first/veloure_neutral',
 ] as const;

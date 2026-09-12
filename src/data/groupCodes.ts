@@ -14,7 +14,7 @@
  * code, and never put it in a URL a participant would see reflected back
  * (e.g. an error message that echoes `?g=`).
  */
-import { ARMS, BLOCK_ORDERS, BRAND_PAIRINGS, type Arm, type BlockOrder, type BrandPairing } from './conditions';
+import { ARMS, BLOCK_ORDERS, type Arm, type BlockOrder } from './conditions';
 
 export const GROUP_CODES: Record<string, Arm> = {
   k7m2: 'mild',
@@ -48,11 +48,14 @@ export function randomArm(): Arm {
 }
 
 /**
- * Order and brand pairing are nuisance factors, not the allocation the group
- * codes control, so per-participant randomisation is sufficient — exact
- * balance isn't required. Drawn fresh for every participant, valid code or
- * not.
+ * Presentation order is a nuisance factor, not the allocation the group codes
+ * control, so per-participant randomisation is sufficient — exact balance
+ * isn't required. Drawn fresh for every participant, valid code or not.
+ *
+ * change_spec_v4_2 Part 1: brand pairing is NO LONGER drawn here. Aurevella is
+ * always the neutral brand; only which store the participant visits first
+ * still varies.
  */
-export function randomOrderAndPairing(): { order: BlockOrder; pairing: BrandPairing } {
-  return { order: pick(BLOCK_ORDERS), pairing: pick(BRAND_PAIRINGS) };
+export function randomOrder(): BlockOrder {
+  return pick(BLOCK_ORDERS);
 }

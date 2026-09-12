@@ -7,8 +7,7 @@
  * without the key regardless of what this component renders.
  */
 import { useEffect, useState } from 'react';
-import { ARM_TARGETS, ARMS } from '../data/conditions';
-import { CELL_LABELS } from '../data/sequence';
+import { ARM_TARGETS, ARMS, BLOCK_ORDERS, LOCKED_PAIRING } from '../data/conditions';
 import { exportCsvUrl, fetchStats, isConfigured, type StatsResponse } from '../net/api';
 
 export function Admin({ adminKey }: { adminKey: string }): JSX.Element {
@@ -85,13 +84,20 @@ export function Admin({ adminKey }: { adminKey: string }): JSX.Element {
         </tbody>
       </table>
 
-      <h2 className="text-[14px] font-semibold mb-2">Counterbalance cells (completed)</h2>
+      {/*
+        change_spec_v4_2 Part 1: brand pairing is locked, so the only
+        counterbalance left is presentation order — two cells, not four. The
+        old four-column table (order × pairing) would now show two columns
+        that can never be non-zero, which reads as a data problem rather than
+        as the design.
+      */}
+      <h2 className="text-[14px] font-semibold mb-2">Order counterbalance (completed)</h2>
       <table className="w-full text-[12px] mb-6 tabular-nums">
         <thead>
           <tr className="text-neutral-500 text-left">
             <th className="font-normal py-1">arm</th>
-            {CELL_LABELS.map((c) => (
-              <th key={c} className="font-normal py-1 text-right">{c.replace('/', ' · ')}</th>
+            {BLOCK_ORDERS.map((o) => (
+              <th key={o} className="font-normal py-1 text-right">{o.replace('_', ' ')}</th>
             ))}
           </tr>
         </thead>
@@ -99,15 +105,18 @@ export function Admin({ adminKey }: { adminKey: string }): JSX.Element {
           {ARMS.map((arm) => (
             <tr key={arm} className="border-t border-neutral-150">
               <td className="py-1.5">{arm}</td>
-              {CELL_LABELS.map((c) => {
-                const [order, pairing] = c.split('/');
-                const cell = stats.cells[`${arm}|${order}|${pairing}`];
-                return <td key={c} className="py-1.5 text-right">{cell?.completed ?? 0}</td>;
+              {BLOCK_ORDERS.map((order) => {
+                const cell = stats.cells[`${arm}|${order}|${LOCKED_PAIRING}`];
+                return <td key={order} className="py-1.5 text-right">{cell?.completed ?? 0}</td>;
               })}
             </tr>
           ))}
         </tbody>
       </table>
+      <p className="text-[12px] text-neutral-500 -mt-4 mb-6">
+        Brand pairing is fixed (Aurevella neutral, Maison Veloure experimental), so it is not a
+        counterbalance cell any more.
+      </p>
 
       <a
         href={exportCsvUrl(adminKey)}
