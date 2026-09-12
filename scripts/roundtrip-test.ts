@@ -8,8 +8,9 @@
  *      calls this endpoint, arm now comes from the recruiting link's group
  *      code. Kept here because the Apps Script itself is unchanged and still
  *      serves it; this proves that claim rather than assuming it.)
- *   3. a full participant row POSTs and lands, with no slot column and a
- *      populated recruiter_id
+ *   3. a full participant row POSTs and lands, with no slot column and no
+ *      recruiter_id column (change_spec_v4_final.md drops the recruiter
+ *      dimension entirely)
  *   4. verify confirms it landed
  *   5. a partial checkpoint row is UPSERTED (not duplicated) by the final submit
  *   6. the exported CSV header is byte-identical to the client's column list
@@ -118,7 +119,7 @@ async function main(): Promise<void> {
     const s1 = fakeSession({
       participantId: 'p-complete-001',
       arm: 'strong', order: 'exp_first', pairing: 'veloure_neutral',
-      complete: true, recruiterId: '4',
+      complete: true,
     });
     const row1 = serializeSession(s1, { status: 'complete', durationS: 402.7 });
     check(
@@ -189,9 +190,9 @@ async function main(): Promise<void> {
       'event_log_json parses back to the same events',
       JSON.parse(dataRow[idx('event_log_json')]!).length === s1.eventLog.length,
     );
-    const latency = dataRow[idx('exp_latency_ms')];
+    const latency = dataRow[idx('exp_p1_latency_ms')];
     check(
-      'exp_latency_ms is present and non-null',
+      'exp_p1_latency_ms is present and non-null',
       latency !== '' && latency !== undefined && Number.isFinite(Number(latency)),
       `got: "${latency}"`,
     );
@@ -208,18 +209,24 @@ async function main(): Promise<void> {
       ),
     );
 
-    // change_spec_group_codes.md §7, verification case 6: no slot column, a
-    // populated recruiter_id, and the source reflects the group code.
+    // change_spec_v4_final.md §9, verification case 9: no slot, no
+    // recruiter_id, and the source reflects the group code.
     check('no slot column in the sheet header', idx('slot') === -1, `found at index ${idx('slot')}`);
-    check(
-      'recruiter_id is populated for a group-code assignment',
-      dataRow[idx('recruiter_id')] === '4',
-      `got: "${dataRow[idx('recruiter_id')]}"`,
-    );
+    check('no recruiter_id column in the sheet header (v4 drops the recruiter dimension)', idx('recruiter_id') === -1, `found at index ${idx('recruiter_id')}`);
     check(
       'assignment_source records group_code',
       dataRow[idx('assignment_source')] === 'group_code',
       `got: "${dataRow[idx('assignment_source')]}"`,
+    );
+    check(
+      'exp_p2 accepted -> exp_accepts is 1',
+      dataRow[idx('exp_accepts')] === '1',
+      `got: "${dataRow[idx('exp_accepts')]}"`,
+    );
+    check(
+      'neutral block had no accepts -> neutral_accepts is 0',
+      dataRow[idx('neutral_accepts')] === '0',
+      `got: "${dataRow[idx('neutral_accepts')]}"`,
     );
 
     // ── 8. stats + debug exclusion ─────────────────────────────────────────

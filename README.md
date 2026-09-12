@@ -4,12 +4,17 @@ A self-administered web app that runs a controlled confirmshaming experiment end
 storefront → discount pop-up → silent behavioural logging → questionnaire → debrief → Google Sheet.
 
 Built to the spec in [`PRD_confirmshaming_experiment_app.md`](PRD_confirmshaming_experiment_app.md),
-with its questionnaire (§4 and §5) replaced by [`Instrument_v2.md`](Instrument_v2.md) — five
-single-item measures per pop-up instead of the original 36, traded for completion at N = 40 on
-phones — and its arm assignment replaced by
-[`change_spec_group_codes.md`](change_spec_group_codes.md) — arm and recruiter now come from an
-opaque code in the recruiting link instead of a server-generated sequence. Everything else
-(storefront, pop-up, event logging, questionnaire, debrief) is unchanged.
+with three changes layered on top, each its own spec doc:
+
+- [`Instrument_v2.md`](Instrument_v2.md) replaces the questionnaire (PRD §4-5) with five
+  single-item measures per brand instead of the original 36, traded for completion on phones.
+- [`change_spec_group_codes.md`](change_spec_group_codes.md) replaced arm assignment with an
+  opaque code in the recruiting link instead of a server-generated sequence (v3: arm + recruiter).
+- [`change_spec_v4_final.md`](change_spec_v4_final.md) (current) simplifies the link to **arm
+  only** — three links, no recruiter — gives each brand **two pop-ups** instead of one (the
+  original single 15%-off pop-up put acceptance at ceiling, leaving no room for the manipulation
+  to show a behavioural difference), and redesigns the storefront to read as a real store.
+
 Target: **N = 45** (15/15/15 per arm), ~6 minutes per participant, mobile-first.
 
 ---
@@ -45,7 +50,7 @@ npm test
 ```
 
 `npm run roundtrip` loads the real generated `apps-script/Code.gs` into a VM with Apps Script stubs
-and asserts 26 properties end to end — including that the exported CSV header is byte-identical to
+and asserts properties end to end — including that the exported CSV header is byte-identical to
 the client's column list. Run it after any change to the item bank or column contract.
 
 ---
@@ -97,7 +102,7 @@ On Vercel, add `VITE_ENDPOINT_URL` under *Settings → Environment Variables* an
 **7. Check it.** Open `<YOUR_EXEC_URL>?action=ping` in a browser. You should see:
 
 ```json
-{"ok":true,"columns":99,"slots":52}
+{"ok":true,"columns":129,"slots":52}
 ```
 
 If `columns` does not match what `npm run gen` printed, you pasted a stale `Code.gs`. (`slots` is
@@ -118,31 +123,17 @@ which is the most common way to end up with data quietly landing in the wrong pl
 
 ## Links you hand out
 
-Arm and recruiter now come from an opaque code in the link itself
-([`change_spec_group_codes.md`](change_spec_group_codes.md)), not from the app. Twelve links, one
-per recruiter × arm combination:
+Arm comes from an opaque code in the link itself ([`change_spec_v4_final.md`](change_spec_v4_final.md)
+Part 1), not from the app. **Three links, one per arm — no recruiter dimension:**
 
 ```
-https://<your-app>.vercel.app/?g=k7m2      recruiter 1, arm mild
-https://<your-app>.vercel.app/?g=r4xn      recruiter 1, arm strong
-https://<your-app>.vercel.app/?g=b9qt      recruiter 1, arm autonomy
-https://<your-app>.vercel.app/?g=w3fe      recruiter 2, arm mild
-https://<your-app>.vercel.app/?g=p6hd      recruiter 2, arm strong
-https://<your-app>.vercel.app/?g=z2vc      recruiter 2, arm autonomy
-https://<your-app>.vercel.app/?g=m8ju      recruiter 3, arm mild
-https://<your-app>.vercel.app/?g=t5ya      recruiter 3, arm strong
-https://<your-app>.vercel.app/?g=n1ls      recruiter 3, arm autonomy
-https://<your-app>.vercel.app/?g=d7or      recruiter 4, arm mild
-https://<your-app>.vercel.app/?g=h4gw      recruiter 4, arm strong
-https://<your-app>.vercel.app/?g=c9ib      recruiter 4, arm autonomy
+https://<your-app>.vercel.app/?g=k7m2      mild shame
+https://<your-app>.vercel.app/?g=p6hd      strong shame
+https://<your-app>.vercel.app/?g=n1ls      autonomy-framed
 ```
 
-Each recruiter gets their own three links (one per arm) and sends people to whichever one hits the
-arm you still need — that mix of links, sent to different friends, is what gets each arm drawing
-from all four recruiters' circles instead of one arm coming entirely from one person's friends. The
-target is **15 completed participants per arm**; watch `Rscript analysis_starter.R`'s arm × recruiter
-table (or `Download CSV` from the admin view) to see how each recruiter's links are landing and steer
-accordingly.
+Send each link out until that arm reaches its target of **15 completed participants**; watch the
+admin view or `Rscript analysis_starter.R` to see counts per arm and steer accordingly.
 
 > **The code-to-arm mapping above must never reach a participant.** The codes are opaque
 > specifically so nobody can infer their condition from the link — don't paste this table, or
@@ -150,9 +141,9 @@ accordingly.
 > also in, a public repo issue). Sharing it defeats the point of the codes.
 
 A mistyped or missing code doesn't break anything — the participant is still assigned an arm
-uniformly at random (never a fixed default), just with `assignment_source = "random"` and a blank
-`recruiter_id`. Test that a link actually works before sending it out; a typo silently downgrades
-that participant to the random path rather than failing loudly.
+uniformly at random (never a fixed default), just with `assignment_source = "random"`. Test that a
+link actually works before sending it out; a typo silently downgrades that participant to the
+random path rather than failing loudly.
 
 ### Debug mode
 
@@ -162,9 +153,9 @@ that participant to the random path rather than failing loudly.
 ?debug=1&arm=mild&pairing=veloure_neutral   force the brand pairing too
 ```
 
-The overlay shows the assignment, the recruiter, the current step, the last 14 events with their
-timestamps, and both blocks' choices and latencies. Every flag is inert without `debug=1`. Debug
-forcing takes priority over a group code — `?debug=1&g=k7m2&arm=strong` runs as `strong`, not
+The overlay shows the assignment, the current step, the last 14 events with their timestamps, and
+both blocks' pop-up 1 / pop-up 2 choices and latencies. Every flag is inert without `debug=1`.
+Debug forcing takes priority over a group code — `?debug=1&g=k7m2&arm=strong` runs as `strong`, not
 `mild` — but `?debug=1&g=k7m2` alone (no `arm=`/`order=`/`pairing=`) resolves the group code
 normally and just adds the overlay, which is the easiest way to sanity-check a link before sending
 it out.
@@ -182,12 +173,11 @@ https://<your-app>.vercel.app/?admin=1&key=<ADMIN_KEY>
 Completed vs target per arm, per-cell counterbalance counts (order × pairing, still meaningful —
 those are still drawn per participant, just no longer from a pre-generated sequence), abandonment
 rate, median duration, and a CSV download. Refreshes every 30 seconds. Check it on day 3 — that is
-when there is still time to steer a recruiter toward whichever arm is falling behind.
+when there is still time to push the link for whichever arm is falling behind.
 
 The key is enforced by the Apps Script, not the browser, so a wrong key returns nothing. The admin
-view has no live count of arm × recruiter mix or of `random`-fallback assignments — the Apps Script
-wasn't changed to compute those (see `codebook.md` §8) — so check those via Download CSV +
-`analysis_starter.R`, which reports both.
+view has no live count of `random`-fallback assignments — the Apps Script wasn't changed to compute
+that (see `codebook.md` §9) — so check it via Download CSV + `analysis_starter.R`, which reports it.
 
 **Note:** the per-arm target shown here still reads 13/13/14 (N=40) — the constant in
 `src/data/conditions.ts` was intentionally left as-is since nothing in the change spec asked for it
@@ -210,12 +200,11 @@ compares the three arms on the four rated items and the downstream choice with H
 CIs. There is no Cronbach's alpha section: Instrument v2 has no multi-item scale to compute it over.
 Output lands in `analysis/output/`.
 
-`analysis/synthetic_sample.csv` is 45 simulated participants (15/15/15 across arms, distributed
-across all four recruiters via the real `GROUP_CODES` table, plus two `random`-fallback rows), with
-a plausible effect built in. It exists so you can run the whole pipeline and build your slide
-templates **before** collecting a single response. Regenerate with
-`npx tsx scripts/make-synthetic-csv.ts`. The numbers in it are invented — do not read anything into
-them.
+`analysis/synthetic_sample.csv` is 45 simulated participants (15/15/15 across arms, plus two
+`random`-fallback rows), each with two simulated pop-ups per brand, with a plausible effect built
+in. It exists so you can run the whole pipeline and build your slide templates **before** collecting
+a single response. Regenerate with `npx tsx scripts/make-synthetic-csv.ts`. The numbers in it are
+invented — do not read anything into them.
 
 The rated-item text and the downstream-choice ordinal mapping live in `analysis/generated_scales.R`,
 generated from the item bank. Don't edit it: change `src/data/items.ts` and run `npm run gen`.
@@ -272,7 +261,8 @@ sessions over the exclusion threshold.
 ```
 PRD_confirmshaming_experiment_app.md   the original spec
 Instrument_v2.md                       replaces PRD §4-5 — the shortened questionnaire
-change_spec_group_codes.md             replaces PRD §7's assign endpoint — link-based assignment
+change_spec_group_codes.md             v3 — replaces PRD §7's assign endpoint with a link-based code
+change_spec_v4_final.md                v4 (current) — 3 links (no recruiter), two pop-ups per brand, redesign
 codebook.md                            GENERATED — every column, scale, recoding rule
 analysis_starter.R                     recoding verification, difference scores, effect sizes
 analysis/
@@ -285,22 +275,22 @@ scripts/
   gen-apps-script.ts                   Code.gs from the column contract
   gen-codebook.ts                      codebook.md + generated_scales.R
   mock-apps-script.mjs                 runs the real Code.gs locally, under stubs
-  roundtrip-test.ts                    29 end-to-end assertions on the data layer
+  roundtrip-test.ts                    end-to-end assertions on the data layer
   make-synthetic-csv.ts                the dry-run dataset
 src/
-  data/groupCodes.ts                   THE CODE-TO-ARM MAP — must never reach a participant
-  data/items.ts                        THE RATED ITEMS (B1-B4) + downstream choice (B5)
+  data/groupCodes.ts                   THE CODE-TO-ARM MAP (3 codes) — must never reach a participant
+  data/items.ts                        THE RATED ITEMS (B1-B4) + downstream choice (B5), per brand
   data/awareness.ts                    the awareness check (screen 10)
   data/comparative.ts                  the comparative block + brand-relative recoding (screen 11)
-  data/columns.ts                      THE CSV CONTRACT — 99 columns
-  data/conditions.ts                   the four decline wordings, and nothing else per-condition
+  data/columns.ts                      THE CSV CONTRACT — 129 columns (p1/p2 per pop-up)
+  data/conditions.ts                   the four decline wordings + both pop-ups' invariant copy
   data/sequence.ts                     GENERATED — vestigial; kept only because Code.gs embeds it
   data/{brands,copy,config}.ts
   machine/                             steps, reducer, persistence, session provider
   instrumentation/clock.ts             the only timer in the app
-  instrumentation/popupTelemetry.ts    latency, cancelled taps, rage taps, dwell
+  instrumentation/popupTelemetry.ts    latency, cancelled taps, rage taps, dwell (per pop-up)
   net/{api,serialize}.ts               transport and the row builder (recoding happens here)
-  screens/                             one component per step
+  screens/                             one component per step, incl. the new OrderConfirmation
 ```
 
 ---
@@ -310,13 +300,19 @@ src/
 Each is deliberate, and each is listed with its reasoning in [`codebook.md`](codebook.md) §11 so the
 write-up can state it rather than discover it. The ones that matter most:
 
-- **Group-code assignment** ([`change_spec_group_codes.md`](change_spec_group_codes.md)) replaces
-  the pre-generated-sequence `assign` endpoint with an opaque `?g=` code in each recruiting link
-  that decodes to an arm and a recruiter. `order`/`pairing` are now drawn per participant with
-  `Math.random()` instead of from the sequence — exact balance isn't required for those, only that
-  they vary. `slot` is removed from the schema entirely.
+- **Group-code assignment** ([`change_spec_group_codes.md`](change_spec_group_codes.md), refined by
+  [`change_spec_v4_final.md`](change_spec_v4_final.md)) replaces the pre-generated-sequence `assign`
+  endpoint with an opaque `?g=` code in each recruiting link that decodes to an arm. `order`/`pairing`
+  are drawn per participant with `Math.random()` instead of from the sequence — exact balance isn't
+  required for those, only that they vary. `slot` and (as of v4) `recruiter_id` are removed from the
+  schema entirely.
+- **Two pop-ups per brand** ([`change_spec_v4_final.md`](change_spec_v4_final.md) Part 2) replaces
+  the original single, no-cost 15%-off pop-up, which put acceptance at ceiling and left no room for
+  the manipulation to show a behavioural difference. Both new pop-ups attach a cost to accepting
+  (an email for the checkout pop-up, a follow for the order-confirmation pop-up) but collect
+  neither — accepting only shows a confirmation message, never a text input.
 - **Instrument v2** replaces the original 36-items-per-block battery with five single-item measures
-  per pop-up ([`Instrument_v2.md`](Instrument_v2.md)). Traded away: Cronbach's alpha, the credibility
+  per brand ([`Instrument_v2.md`](Instrument_v2.md)). Traded away: Cronbach's alpha, the credibility
   axis, brand attributions, the guilt/anger/amusement factor structure. Kept: perceived manipulation,
   irritation (the mediator), brand trust, a downstream behavioural choice, awareness, and the
   within-person difference score.
@@ -334,12 +330,13 @@ write-up can state it rather than discover it. The ones that matter most:
 - [ ] `ADMIN_KEY` changed in `Code.gs`, and the deployment is a **Web app / Execute as Me / Anyone**
 - [ ] `?action=ping` returns the same column count `npm run gen` printed
 - [ ] `VITE_ENDPOINT_URL` set in Vercel, and a test submission lands in the Sheet
-- [ ] Each of the twelve `?g=` links opened once (with `&debug=1` added, so it doesn't count as a
-      real participant) and confirmed to show the right arm and recruiter in the overlay
+- [ ] Each of the three `?g=` links opened once (with `&debug=1` added, so it doesn't count as a
+      real participant) and confirmed to show the right arm in the overlay
 - [ ] `deleteDebugRows()` run after piloting
 - [ ] One full run on a real Android phone on mobile data, not just desktop
 - [ ] Two pilot participants from outside the group finish without asking a question
-- [ ] Both pilot rows have **non-null** `neutral_latency_ms` and `exp_latency_ms`
+- [ ] Both pilot rows have **non-null** latency for all four pop-ups (`neutral_p1_latency_ms`,
+      `neutral_p2_latency_ms`, `exp_p1_latency_ms`, `exp_p2_latency_ms`)
 - [ ] The CSV opens cleanly and `Rscript analysis_starter.R <export>.csv` runs on it
-- [ ] The twelve links are with the four recruiters and NOT anywhere participants could see the
+- [ ] The three links are with whoever is recruiting and NOT anywhere participants could see the
       code-to-arm mapping

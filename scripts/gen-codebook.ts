@@ -21,7 +21,7 @@ import {
   C1_STEM, C2_STEM, C3_STEM, C4_STEM, C5_STEM, C6_STEM, C3_SCALE, C5_SCALE,
   recodeBrandChoice, recodeComparativeScale,
 } from '../src/data/comparative';
-import { COLUMNS, BLOCK_PREFIXES } from '../src/data/columns';
+import { COLUMNS, BLOCK_PREFIXES, POPUP_PREFIXES } from '../src/data/columns';
 import { ARM_TARGETS, ARMS, DECLINE_COPY } from '../src/data/conditions';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -61,7 +61,8 @@ One row per participant. **${COLUMNS.length} columns.**
 
 This is **Instrument v2** (see \`Instrument_v2.md\`, which replaces PRD §4 and §5). It trades the
 v1 multi-item, multi-factor battery (72 rated items, Cronbach's alpha, five factors) for five
-single-item measures per pop-up, to protect completion at N = 40 on phones. **What's kept:**
+single-item measures per brand (change_spec_v4_final.md Part 4 moved the stems from pop-up level to
+brand level once each brand started showing two pop-ups), to protect completion on phones. **What's kept:**
 perceived manipulation, irritation (the mediator), brand trust, a downstream behavioural choice,
 awareness, and the within-person difference score. **What's given up:** Cronbach's alpha, the
 credibility axis, brand attributions, and the guilt/anger/amusement factor structure. State this
@@ -197,35 +198,54 @@ the neutral brand, so the experimental brand is Brand 2 and the raw scale must r
 | --- | --- |
 ${Object.entries(DECLINE_COPY).map(([k, v]) => `| \`${k}\` | "${v}" |`).join('\n')}
 
-**This wording is the only difference between conditions.** Headline, offer, accept label, close
+**This wording is the only difference between arms.** Headline, offer, accept label, close
 "X", tap-target size, contrast, animation and timing are identical, enforced by
 \`src/screens/Popup.identical.test.tsx\`.
 
-## 8. Assignment mechanism
+## 8. Two pop-ups per brand (v4)
 
-**Arm and recruiter come from the recruiting link, not from the app** (change_spec_group_codes.md,
-v3). Each participant's link carries an opaque \`?g=\` code; decoding it (\`src/data/groupCodes.ts\`)
-gives both the arm and the recruiter in one step. The exact code-to-arm-to-recruiter table is
-deliberately **not** reproduced here — see \`README.md\` (kept by the study team, never shared with
-participants) and the source file itself. A missing or unrecognised code never falls back to a
-fixed arm: the client draws one uniformly at random and records \`assignment_source = "random"\`
-with an empty \`recruiter_id\`, so that count is visible and reportable as a limitation rather than
+Each brand now shows **two** pop-ups (change_spec_v4_final.md Part 2), not one: **p1** fires on
+checkout intent (add-to-bag), exactly as the single pop-up used to; **p2** fires on a new
+order-confirmation screen that follows p1. Both of a brand's pop-ups carry that brand's decline
+wording — **never mixed within a brand** — so every per-pop-up column below is duplicated as
+\`_p1_\` / \`_p2_\`, while fields that describe the block rather than either pop-up (\`condition\`,
+\`brand\`, \`block_position\`, \`decline_label\`, \`product_viewed\`, \`time_on_store_ms\`) stay singular.
+
+Both pop-ups' copy references collecting contact details (an email for p1's discount, a follow for
+p2's), but **neither actually collects anything**: no text input is ever rendered, nothing typed is
+ever stored, and accepting simply shows a confirmation message on the following screen before
+moving on. \`neutral_accepts\` / \`exp_accepts\` / \`diff_accepts\` count how many of a block's two
+pop-ups were accepted (0–2), as a second, purely behavioural outcome alongside the rated-item
+difference scores.
+
+## 9. Assignment mechanism
+
+**Arm comes from the recruiting link, not from the app** (change_spec_v4_final.md, v4). Each
+participant's link carries an opaque \`?g=\` code; decoding it (\`src/data/groupCodes.ts\`) gives the
+arm directly — v4 drops the recruiter dimension entirely, so there is no \`recruiter_id\` column.
+The exact code-to-arm table is deliberately **not** reproduced here — see \`README.md\` (kept by the
+study team, never shared with participants) and the source file itself. A missing or unrecognised
+code never falls back to a fixed arm: the client draws one uniformly at random and records
+\`assignment_source = "random"\`, so that count is visible and reportable as a limitation rather than
 silently stacking participants into one condition.
 
 \`order\` and \`pairing\` are nuisance factors, not the allocation being controlled, so they are drawn
 per participant with \`Math.random()\` rather than from a pre-generated sequence — exact balance
 across cells isn't required, only that they vary.
 
-> **Superseded.** Versions of this app before change_spec_group_codes.md used a pre-generated,
-> seeded 52-slot sequence served one slot at a time by the Apps Script's \`assign\` endpoint, which
-> guaranteed an exact 13/13/14 split. That endpoint still exists in \`apps-script/Code.gs\` (the
-> script was left unmodified) but the client no longer calls it — arm now comes entirely from the
-> link. Do not treat \`?action=assign\` as live; it is vestigial.
+> **Superseded, twice over.** Before change_spec_group_codes.md (v3), a pre-generated, seeded
+> 52-slot sequence was served one slot at a time by the Apps Script's \`assign\` endpoint, which
+> guaranteed an exact 13/13/14 split — that endpoint still exists in \`apps-script/Code.gs\` (the
+> script was left unmodified) but nothing calls it any more; do not treat \`?action=assign\` as live,
+> it is vestigial. v3 then replaced that sequence with a \`?g=\` code carrying BOTH an arm and a
+> recruiter (four recruiters × three arms, twelve codes) and a \`recruiter_id\` column. v4
+> (change_spec_v4_final.md) drops the recruiter dimension entirely — three links, one per arm, no
+> recruiter attribution, no \`recruiter_id\` column.
 
-## 9. Response-type coding (derived, never asked)
+## 10. Response-type coding (derived, never asked)
 
-Recomputed in R from \`choice\`, \`latency_ms\` and awareness correctness, so the threshold can be
-re-tuned:
+Computed once PER POP-UP. Recomputed in R from \`choice\`, \`latency_ms\` and awareness correctness,
+so the threshold can be re-tuned:
 
 | Behaviour | Code | Interpretation |
 | --- | --- | --- |
@@ -234,39 +254,43 @@ re-tuned:
 | Closes via "X" / backdrop, or times out | \`avoid\` | Shame avoidance rather than offer rejection |
 | Dismissal < 1500 ms **and** fails the awareness check | \`ignore\` | Tactic passed unnoticed |
 
-## 10. Exclusion rules
+## 11. Exclusion rules
 
 Apply before analysis:
 
 1. \`is_debug == TRUE\` — pilot and debug runs. Always exclude.
 2. \`status != "complete"\` — dropouts. Keep them to report the abandonment rate, exclude from
    outcome models.
-3. \`*_popup_render_gap_ms > 2000\` — PRD §11: a pop-up that took over 2 s to paint makes that
-   block's latency uninterpretable.
+3. \`*_p1_popup_render_gap_ms > 2000\` or \`*_p2_popup_render_gap_ms > 2000\` — a pop-up that took
+   over 2 s to paint makes THAT pop-up's latency uninterpretable. Apply per pop-up, not per block.
 4. \`resumed_after_reload == TRUE\` **with null timing** — the participant reloaded mid-measurement.
-   Self-report is still usable; the behavioural columns for that block are null by design.
+   Self-report is still usable; the affected pop-up's behavioural columns are null by design.
 5. \`assignment_source == "random"\` — the participant's link had a missing or unrecognised group
    code, so the client picked an arm uniformly at random. Not part of the intended 15/15/15
    allocation. Report the count as a limitation rather than dropping silently.
+6. \`*_p1_abandoned == TRUE\` or \`*_p2_abandoned == TRUE\` on an otherwise-\`complete\` row should not
+   happen (a complete row means every pop-up resolved) — treat it as a bug if seen, not as data to
+   exclude.
 
-## 11. Deviations from the PRD / v1 instrument
+## 12. Deviations from the PRD / v1 instrument
 
 Each is deliberate; each is here so the write-up can state it rather than discover it.
 
 | PRD / v1 says | Implemented as | Why |
 | --- | --- | --- |
-| Arm assigned by the app (pre-generated sequence via the Apps Script) | Arm decoded from the recruiting link's \`?g=\` group code; \`order\`/\`pairing\` drawn per participant | change_spec_group_codes.md (v3): a clean 15/15/15 split needs each arm drawing from all four recruiters' circles, which only the links can guarantee. \`slot\` is removed from the schema entirely. |
+| Arm assigned by the app (pre-generated sequence via the Apps Script) | Arm decoded from the recruiting link's \`?g=\` group code; \`order\`/\`pairing\` drawn per participant | change_spec_group_codes.md (v3), refined by change_spec_v4_final.md (v4): a clean split needs each arm drawing from an independent link, which only link-based control can guarantee. \`slot\` and (as of v4) \`recruiter_id\` are removed from the schema entirely. |
+| One pop-up per brand | Two pop-ups per brand (checkout + order confirmation), same decline wording within a brand | change_spec_v4_final.md Part 2: the original 15%-off-at-no-cost pop-up put acceptance at ceiling, leaving no room for the manipulation to show a behavioural difference. Both new pop-ups attach a cost to accepting. |
 | 72 rated items, 9 multi-item scales | 8 rated items (B1–B4 × 2 blocks) + downstream choice + comparative block | Instrument v2 (\`Instrument_v2.md\`): reliability traded for completion at N = 40 on phones. |
 | Cronbach's alpha per scale | None — every rated item is single-item | No multi-item scale exists in v2 to compute alpha over. |
 | Recognition check, immediate options | Awareness check, descriptive (non-literal) options, still asked after both blocks | Both v1 and v2 ask retrospectively; v2's options describe the wording's implication rather than quoting it, so no option can cue the participant who saw that exact condition. |
 | \`mode: 'no-cors'\` POST | CORS-simple \`text/plain\` POST | An opaque response resolves successfully even on a 500, making retry-and-rescue logic unreachable. Unaffected by the v1→v2 instrument change. |
-| \`*_abandoned\` per block | Session-level \`abandoned\` + \`abandoned_at_step\` | A participant abandons a session, not a pop-up. |
+| \`*_abandoned\` per block | Session-level \`abandoned\` + \`abandoned_at_step\`, PLUS a per-pop-up \`*_p1_abandoned\`/\`*_p2_abandoned\` (v4) | A participant abandons a session, not a pop-up — but with two pop-ups per block now, which specific pop-up was never reached is itself useful information a single session-level flag can't give. |
 | \`cancelled_taps\` includes \`pointercancel\` | Split into \`cancelled_taps\` and \`pointer_cancels\` | On Android \`pointercancel\` fires on every scroll. |
 | Continuation "6 s or until action" | Live from 0 s, auto-advance at 8 s, censoring flagged | Ambiguous between a floor and a ceiling. |
 | \`abandon\` response code, no threshold | \`timeout\` at 45 s | Without a timeout a frozen participant loses the entire row. |
 | ~6 minutes (v1: 8–10 due to item load) | Consent states ${'`'}about 6 minutes${'`'} again | v2's much shorter instrument (~23 items total vs ~80) makes the original PRD estimate realistic. Confirm against pilot times. |
 
-## 12. All columns
+## 13. All columns
 
 ${groups
   .map((group) => {
@@ -305,6 +329,10 @@ const r = `# GENERATED FILE — do not edit by hand.
 # the instrument that was actually administered.
 
 BLOCK_PREFIXES <- c(${BLOCK_PREFIXES.map((p) => `"${p}"`).join(', ')})
+
+# change_spec_v4_final.md Part 2: two pop-ups per brand block, p1 (checkout)
+# and p2 (order confirmation). Behavioural columns are \${BLOCK_PREFIX}_\${POPUP_PREFIX}_*.
+POPUP_PREFIXES <- c(${POPUP_PREFIXES.map((p) => `"${p}"`).join(', ')})
 
 # Instrument v2: single-item measures. No reverse-coding — none of the four
 # rated items are worded opposite to their construct.

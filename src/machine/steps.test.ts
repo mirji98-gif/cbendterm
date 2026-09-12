@@ -12,7 +12,7 @@ import { describe, expect, it } from 'vitest';
 import { RATED_ITEMS } from '../data/items';
 import { AWARENESS_STEM } from '../data/awareness';
 import { DECLINE_COPY } from '../data/conditions';
-import { nextStep, showProgress, isShoppingStep, QUESTIONNAIRE_STEPS } from './steps';
+import { nextStep, showProgress, isShoppingStep, popupKeyForStep, QUESTIONNAIRE_STEPS } from './steps';
 import type { Step } from './types';
 
 describe('measurement order (Instrument_v2.md)', () => {
@@ -90,8 +90,8 @@ describe('"easy to get wrong" #2 — brand trust is level-framed', () => {
 describe('nothing hints at a study before the debrief', () => {
   const ALL_STEPS: Step[] = [
     'consent', 'instructions',
-    'store_1', 'product_1', 'popup_1', 'continuation_1', 'block_1',
-    'store_2', 'product_2', 'popup_2', 'continuation_2', 'block_2',
+    'store_1', 'product_1', 'checkout_1', 'confirm_1', 'continuation_1', 'block_1',
+    'store_2', 'product_2', 'checkout_2', 'confirm_2', 'continuation_2', 'block_2',
     'awareness', 'comparative', 'covariates', 'demographics',
     'submitting', 'debrief', 'rescue',
   ];
@@ -105,6 +105,29 @@ describe('nothing hints at a study before the debrief', () => {
     for (const step of QUESTIONNAIRE_STEPS) {
       expect(showProgress(step), `${step} should show progress`).toBe(true);
     }
+  });
+});
+
+describe('change_spec_v4_final.md Part 3 — revised flow, two pop-ups per block', () => {
+  it('runs checkout -> confirm -> continuation -> block in order, for both blocks', () => {
+    expect(nextStep('product_1')).toBe('checkout_1');
+    expect(nextStep('checkout_1')).toBe('confirm_1');
+    expect(nextStep('confirm_1')).toBe('continuation_1');
+    expect(nextStep('continuation_1')).toBe('block_1');
+    expect(nextStep('product_2')).toBe('checkout_2');
+    expect(nextStep('checkout_2')).toBe('confirm_2');
+    expect(nextStep('confirm_2')).toBe('continuation_2');
+    expect(nextStep('continuation_2')).toBe('block_2');
+  });
+
+  it('attributes a reload during checkout_N to pop-up 1, and confirm_N/continuation_N to pop-up 2', () => {
+    expect(popupKeyForStep('checkout_1')).toBe('p1');
+    expect(popupKeyForStep('checkout_2')).toBe('p1');
+    expect(popupKeyForStep('confirm_1')).toBe('p2');
+    expect(popupKeyForStep('confirm_2')).toBe('p2');
+    expect(popupKeyForStep('continuation_1')).toBe('p2');
+    expect(popupKeyForStep('continuation_2')).toBe('p2');
+    expect(popupKeyForStep('store_1')).toBeNull();
   });
 });
 

@@ -11,7 +11,7 @@
  * component, don't — src/instrumentation/clock.test.ts greps the source tree
  * and fails the build.
  */
-import type { BlockKey, LoggedEvent } from '../machine/types';
+import type { BlockKey, LoggedEvent, PopupKey } from '../machine/types';
 
 /** Monotonic milliseconds since page load. Use for EVERY duration. */
 export function now(): number {
@@ -32,9 +32,11 @@ export function makeEvent(
   type: string,
   payload?: Record<string, unknown>,
   block?: BlockKey,
+  popup?: PopupKey,
 ): LoggedEvent {
   const event: LoggedEvent = { t: ms(now()), type };
   if (block) event.block = block;
+  if (popup) event.popup = popup;
   if (payload && Object.keys(payload).length) event.payload = payload;
   return event;
 }

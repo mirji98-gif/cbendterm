@@ -1,5 +1,8 @@
 /**
- * Continuation screen — measures post-dismissal dwell.
+ * Continuation screen — measures post-dismissal dwell for pop-up 2 only
+ * (change_spec_v4_final.md Part 2/3: pop-up 1's "dwell" is the automatic,
+ * un-timed transition to the order-confirmation screen, which has no
+ * continuation screen of its own).
  *
  * The button is live from t=0 (no artificial floor) and the screen
  * auto-advances at 8s. PRD §4 says "6s or until action", which is ambiguous
@@ -10,7 +13,7 @@
  */
 import { useEffect, useRef } from 'react';
 import { Screen, PrimaryButton, Heading } from '../components/Screen';
-import { CONTINUATION } from '../data/copy';
+import { CONTINUATION, FOLLOW_CONFIRMED } from '../data/copy';
 import { TIMING } from '../data/config';
 import { now } from '../instrumentation/clock';
 import { useSession } from '../machine/SessionContext';
@@ -18,6 +21,7 @@ import type { BlockKey } from '../machine/types';
 
 export function Continuation({ blockKey }: { blockKey: BlockKey }): JSX.Element {
   const api = useSession();
+  const block = api.session.blocks![blockKey]!;
   const shownAt = useRef(now());
   const done = useRef(false);
 
@@ -38,6 +42,11 @@ export function Continuation({ blockKey }: { blockKey: BlockKey }): JSX.Element 
       <div className="pt-10">
         <Heading>{CONTINUATION.title}</Heading>
         <p className="text-[15px] text-neutral-600 leading-relaxed">{CONTINUATION.body}</p>
+        {block.p2.choice === 'accept' && (
+          <p className="text-[14px] text-neutral-900 font-medium leading-relaxed mt-3">
+            {FOLLOW_CONFIRMED}
+          </p>
+        )}
       </div>
     </Screen>
   );

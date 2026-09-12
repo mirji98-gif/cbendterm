@@ -7,14 +7,18 @@
 
 BLOCK_PREFIXES <- c("neutral", "exp")
 
+# change_spec_v4_final.md Part 2: two pop-ups per brand block, p1 (checkout)
+# and p2 (order confirmation). Behavioural columns are ${BLOCK_PREFIX}_${POPUP_PREFIX}_*.
+POPUP_PREFIXES <- c("p1", "p2")
+
 # Instrument v2: single-item measures. No reverse-coding — none of the four
 # rated items are worded opposite to their construct.
 RATED_ITEMS <- c("b1_guilt", "b2_irritation", "b3_manipulation", "b4_trust")
 
 RATED_ITEM_LABELS <- c(
-  b1_guilt = "I felt guilty about declining the offer.",
-  b2_irritation = "I felt irritated by the way this offer was presented.",
-  b3_manipulation = "The way this offer was presented was intended to pressure me into accepting it.",
+  b1_guilt = "I felt guilty about declining this brand's offers.",
+  b2_irritation = "I felt irritated by the way this brand presented its offers.",
+  b3_manipulation = "The way this brand presented its offers was intended to pressure me into accepting.",
   b4_trust = "I would trust this brand."
 )
 

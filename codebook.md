@@ -6,11 +6,12 @@
 > Because the CSV, this codebook and `analysis/generated_scales.R` are all produced from those
 > files, they cannot describe an instrument different from the one actually administered.
 
-One row per participant. **99 columns.**
+One row per participant. **129 columns.**
 
 This is **Instrument v2** (see `Instrument_v2.md`, which replaces PRD §4 and §5). It trades the
 v1 multi-item, multi-factor battery (72 rated items, Cronbach's alpha, five factors) for five
-single-item measures per pop-up, to protect completion at N = 40 on phones. **What's kept:**
+single-item measures per brand (change_spec_v4_final.md Part 4 moved the stems from pop-up level to
+brand level once each brand started showing two pop-ups), to protect completion on phones. **What's kept:**
 perceived manipulation, irritation (the mediator), brand trust, a downstream behavioural choice,
 awareness, and the within-person difference score. **What's given up:** Cronbach's alpha, the
 credibility axis, brand attributions, and the guilt/anger/amusement factor structure. State this
@@ -26,9 +27,9 @@ ordering constraint, and shuffling risks putting the manipulation item before ir
 
 | # | Item | Wording | Scale | Note |
 | --- | --- | --- | --- | --- |
-| 1 | `b1_guilt` | I felt guilty about declining the offer. | 7-point intensity, 1 = not at all … 7 = very strongly | Keeps H1 testable — without a guilt item there is no basis for calling this a guilt appeal, which is the entire premise of the Peng et al. prediction. Worded as guilt about DECLINING, not about the brand. |
-| 2 | `b2_irritation` | I felt irritated by the way this offer was presented. | 7-point intensity, 1 = not at all … 7 = very strongly | THE MEDIATOR. Per Coulter & Pinto (1995), anger/irritation — not felt guilt — carries the damage to trust and purchase intention. Treat this as the mediator in analysis, not a descriptive aside. |
-| 3 | `b3_manipulation` | The way this offer was presented was intended to pressure me into accepting it. | 7-point Likert, 1 = strongly disagree … 7 = strongly agree | Tests H3 (perceived manipulative intent). |
+| 1 | `b1_guilt` | I felt guilty about declining this brand's offers. | 7-point intensity, 1 = not at all … 7 = very strongly | Keeps H1 testable — without a guilt item there is no basis for calling this a guilt appeal, which is the entire premise of the Peng et al. prediction. Worded as guilt about DECLINING, not about the brand. change_spec_v4_final.md Part 4 moves the stem to brand level: with two pop-ups per brand now sharing the same decline wording, "this brand's offers" (plural) is the accurate referent, not any single pop-up. |
+| 2 | `b2_irritation` | I felt irritated by the way this brand presented its offers. | 7-point intensity, 1 = not at all … 7 = very strongly | THE MEDIATOR. Per Coulter & Pinto (1995), anger/irritation — not felt guilt — carries the damage to trust and purchase intention. Treat this as the mediator in analysis, not a descriptive aside. |
+| 3 | `b3_manipulation` | The way this brand presented its offers was intended to pressure me into accepting. | 7-point Likert, 1 = strongly disagree … 7 = strongly agree | Tests H3 (perceived manipulative intent). |
 | 4 | `b4_trust` | I would trust this brand. | 7-point Likert, 1 = strongly disagree … 7 = strongly agree | Deliberately LEVEL-framed, not change-framed ("compared with before" etc.). The within-person difference score (experimental − neutral) is what measures the trust penalty; if the item itself also contained a comparison, the two would nest and become uninterpretable. A level item also lets trust go UP, which H4 predicts for the autonomy arm — a change-framed item cannot detect that. |
 
 **No item is reverse-coded.** None of the four items are worded in the opposite direction to their
@@ -43,7 +44,7 @@ detect that.
 
 ## 2. Downstream choice (B5)
 
-> If you were actually shopping for this type of product, which would you be most likely to do after seeing this pop-up?
+> If you were actually shopping for this type of product, which would you be most likely to do after this experience?
 
 Stored raw (`b5_raw`) **and** as a derived ordinal (`b5_ord`), so it can be differenced like the
 rated items:
@@ -61,7 +62,7 @@ With 13 per arm the raw five-way cross-tab will have cells of two or three peopl
 
 ## 3. Open-ended (B6)
 
-> What, if anything, stood out to you about the way the offer was presented?
+> What, if anything, stood out to you about the way this brand presented its offers?
 
 Optional, skippable immediately — no minimum length, no forced wait (a deliberate departure from
 v1's OpenEnded screen, which had both; v2 measures this per block instead of once at the end).
@@ -163,35 +164,54 @@ the neutral brand, so the experimental brand is Brand 2 and the raw scale must r
 | `strong` | "No thanks, I don’t need to save money" |
 | `autonomy` | "Not now — I’ll decide later" |
 
-**This wording is the only difference between conditions.** Headline, offer, accept label, close
+**This wording is the only difference between arms.** Headline, offer, accept label, close
 "X", tap-target size, contrast, animation and timing are identical, enforced by
 `src/screens/Popup.identical.test.tsx`.
 
-## 8. Assignment mechanism
+## 8. Two pop-ups per brand (v4)
 
-**Arm and recruiter come from the recruiting link, not from the app** (change_spec_group_codes.md,
-v3). Each participant's link carries an opaque `?g=` code; decoding it (`src/data/groupCodes.ts`)
-gives both the arm and the recruiter in one step. The exact code-to-arm-to-recruiter table is
-deliberately **not** reproduced here — see `README.md` (kept by the study team, never shared with
-participants) and the source file itself. A missing or unrecognised code never falls back to a
-fixed arm: the client draws one uniformly at random and records `assignment_source = "random"`
-with an empty `recruiter_id`, so that count is visible and reportable as a limitation rather than
+Each brand now shows **two** pop-ups (change_spec_v4_final.md Part 2), not one: **p1** fires on
+checkout intent (add-to-bag), exactly as the single pop-up used to; **p2** fires on a new
+order-confirmation screen that follows p1. Both of a brand's pop-ups carry that brand's decline
+wording — **never mixed within a brand** — so every per-pop-up column below is duplicated as
+`_p1_` / `_p2_`, while fields that describe the block rather than either pop-up (`condition`,
+`brand`, `block_position`, `decline_label`, `product_viewed`, `time_on_store_ms`) stay singular.
+
+Both pop-ups' copy references collecting contact details (an email for p1's discount, a follow for
+p2's), but **neither actually collects anything**: no text input is ever rendered, nothing typed is
+ever stored, and accepting simply shows a confirmation message on the following screen before
+moving on. `neutral_accepts` / `exp_accepts` / `diff_accepts` count how many of a block's two
+pop-ups were accepted (0–2), as a second, purely behavioural outcome alongside the rated-item
+difference scores.
+
+## 9. Assignment mechanism
+
+**Arm comes from the recruiting link, not from the app** (change_spec_v4_final.md, v4). Each
+participant's link carries an opaque `?g=` code; decoding it (`src/data/groupCodes.ts`) gives the
+arm directly — v4 drops the recruiter dimension entirely, so there is no `recruiter_id` column.
+The exact code-to-arm table is deliberately **not** reproduced here — see `README.md` (kept by the
+study team, never shared with participants) and the source file itself. A missing or unrecognised
+code never falls back to a fixed arm: the client draws one uniformly at random and records
+`assignment_source = "random"`, so that count is visible and reportable as a limitation rather than
 silently stacking participants into one condition.
 
 `order` and `pairing` are nuisance factors, not the allocation being controlled, so they are drawn
 per participant with `Math.random()` rather than from a pre-generated sequence — exact balance
 across cells isn't required, only that they vary.
 
-> **Superseded.** Versions of this app before change_spec_group_codes.md used a pre-generated,
-> seeded 52-slot sequence served one slot at a time by the Apps Script's `assign` endpoint, which
-> guaranteed an exact 13/13/14 split. That endpoint still exists in `apps-script/Code.gs` (the
-> script was left unmodified) but the client no longer calls it — arm now comes entirely from the
-> link. Do not treat `?action=assign` as live; it is vestigial.
+> **Superseded, twice over.** Before change_spec_group_codes.md (v3), a pre-generated, seeded
+> 52-slot sequence was served one slot at a time by the Apps Script's `assign` endpoint, which
+> guaranteed an exact 13/13/14 split — that endpoint still exists in `apps-script/Code.gs` (the
+> script was left unmodified) but nothing calls it any more; do not treat `?action=assign` as live,
+> it is vestigial. v3 then replaced that sequence with a `?g=` code carrying BOTH an arm and a
+> recruiter (four recruiters × three arms, twelve codes) and a `recruiter_id` column. v4
+> (change_spec_v4_final.md) drops the recruiter dimension entirely — three links, one per arm, no
+> recruiter attribution, no `recruiter_id` column.
 
-## 9. Response-type coding (derived, never asked)
+## 10. Response-type coding (derived, never asked)
 
-Recomputed in R from `choice`, `latency_ms` and awareness correctness, so the threshold can be
-re-tuned:
+Computed once PER POP-UP. Recomputed in R from `choice`, `latency_ms` and awareness correctness,
+so the threshold can be re-tuned:
 
 | Behaviour | Code | Interpretation |
 | --- | --- | --- |
@@ -200,60 +220,63 @@ re-tuned:
 | Closes via "X" / backdrop, or times out | `avoid` | Shame avoidance rather than offer rejection |
 | Dismissal < 1500 ms **and** fails the awareness check | `ignore` | Tactic passed unnoticed |
 
-## 10. Exclusion rules
+## 11. Exclusion rules
 
 Apply before analysis:
 
 1. `is_debug == TRUE` — pilot and debug runs. Always exclude.
 2. `status != "complete"` — dropouts. Keep them to report the abandonment rate, exclude from
    outcome models.
-3. `*_popup_render_gap_ms > 2000` — PRD §11: a pop-up that took over 2 s to paint makes that
-   block's latency uninterpretable.
+3. `*_p1_popup_render_gap_ms > 2000` or `*_p2_popup_render_gap_ms > 2000` — a pop-up that took
+   over 2 s to paint makes THAT pop-up's latency uninterpretable. Apply per pop-up, not per block.
 4. `resumed_after_reload == TRUE` **with null timing** — the participant reloaded mid-measurement.
-   Self-report is still usable; the behavioural columns for that block are null by design.
+   Self-report is still usable; the affected pop-up's behavioural columns are null by design.
 5. `assignment_source == "random"` — the participant's link had a missing or unrecognised group
    code, so the client picked an arm uniformly at random. Not part of the intended 15/15/15
    allocation. Report the count as a limitation rather than dropping silently.
+6. `*_p1_abandoned == TRUE` or `*_p2_abandoned == TRUE` on an otherwise-`complete` row should not
+   happen (a complete row means every pop-up resolved) — treat it as a bug if seen, not as data to
+   exclude.
 
-## 11. Deviations from the PRD / v1 instrument
+## 12. Deviations from the PRD / v1 instrument
 
 Each is deliberate; each is here so the write-up can state it rather than discover it.
 
 | PRD / v1 says | Implemented as | Why |
 | --- | --- | --- |
-| Arm assigned by the app (pre-generated sequence via the Apps Script) | Arm decoded from the recruiting link's `?g=` group code; `order`/`pairing` drawn per participant | change_spec_group_codes.md (v3): a clean 15/15/15 split needs each arm drawing from all four recruiters' circles, which only the links can guarantee. `slot` is removed from the schema entirely. |
+| Arm assigned by the app (pre-generated sequence via the Apps Script) | Arm decoded from the recruiting link's `?g=` group code; `order`/`pairing` drawn per participant | change_spec_group_codes.md (v3), refined by change_spec_v4_final.md (v4): a clean split needs each arm drawing from an independent link, which only link-based control can guarantee. `slot` and (as of v4) `recruiter_id` are removed from the schema entirely. |
+| One pop-up per brand | Two pop-ups per brand (checkout + order confirmation), same decline wording within a brand | change_spec_v4_final.md Part 2: the original 15%-off-at-no-cost pop-up put acceptance at ceiling, leaving no room for the manipulation to show a behavioural difference. Both new pop-ups attach a cost to accepting. |
 | 72 rated items, 9 multi-item scales | 8 rated items (B1–B4 × 2 blocks) + downstream choice + comparative block | Instrument v2 (`Instrument_v2.md`): reliability traded for completion at N = 40 on phones. |
 | Cronbach's alpha per scale | None — every rated item is single-item | No multi-item scale exists in v2 to compute alpha over. |
 | Recognition check, immediate options | Awareness check, descriptive (non-literal) options, still asked after both blocks | Both v1 and v2 ask retrospectively; v2's options describe the wording's implication rather than quoting it, so no option can cue the participant who saw that exact condition. |
 | `mode: 'no-cors'` POST | CORS-simple `text/plain` POST | An opaque response resolves successfully even on a 500, making retry-and-rescue logic unreachable. Unaffected by the v1→v2 instrument change. |
-| `*_abandoned` per block | Session-level `abandoned` + `abandoned_at_step` | A participant abandons a session, not a pop-up. |
+| `*_abandoned` per block | Session-level `abandoned` + `abandoned_at_step`, PLUS a per-pop-up `*_p1_abandoned`/`*_p2_abandoned` (v4) | A participant abandons a session, not a pop-up — but with two pop-ups per block now, which specific pop-up was never reached is itself useful information a single session-level flag can't give. |
 | `cancelled_taps` includes `pointercancel` | Split into `cancelled_taps` and `pointer_cancels` | On Android `pointercancel` fires on every scroll. |
 | Continuation "6 s or until action" | Live from 0 s, auto-advance at 8 s, censoring flagged | Ambiguous between a floor and a ceiling. |
 | `abandon` response code, no threshold | `timeout` at 45 s | Without a timeout a frozen participant loses the entire row. |
 | ~6 minutes (v1: 8–10 due to item load) | Consent states `about 6 minutes` again | v2's much shorter instrument (~23 items total vs ~80) makes the original PRD estimate realistic. Confirm against pilot times. |
 
-## 12. All columns
+## 13. All columns
 
 ### Session
 
 | Column | Type | Scale / values | Description |
 | --- | --- | --- | --- |
 | `participant_id` | string | — | Client-generated UUID, minted at consent. Upsert key — a checkpoint row and the final row share it. |
-| `recruiter_id` | string | — | Decoded from the ?g= group code in the recruiting link (1-4). Empty when assignment_source is "random" — a missing or unrecognised code has no recruiter to attribute. |
 | `status` | enum | `partial`, `complete` | complete = participant reached submit. partial = a checkpoint row that was never superseded, i.e. the participant dropped out. |
 | `is_debug` | bool | — | TRUE for ?debug=1 sessions. Debug runs write real rows through the real code path; filter them out of every count and export. |
-| `app_version` | string | — | Build identifier, so a mid-fieldwork change (e.g. the v1→v2 instrument swap) is detectable in the data. |
+| `app_version` | string | — | Build identifier, so a mid-fieldwork change is detectable in the data. |
 
 ### Assignment
 
 | Column | Type | Scale / values | Description |
 | --- | --- | --- | --- |
-| `assignment_source` | enum | `group_code`, `random`, `debug` | group_code = arm and recruiter decoded from a valid ?g= link. random = the code was missing or unrecognised, so the client picked an arm uniformly at random (never a fixed default). debug = forced via ?debug=1. Report the random count as a limitation — it is not part of the intended 15/15/15 allocation. |
-| `arm` | enum | `mild`, `strong`, `autonomy` | Between-subjects framing arm. Comes from the recruiting link, not from the app (change_spec_group_codes.md). |
+| `assignment_source` | enum | `group_code`, `random`, `debug` | group_code = arm decoded from a valid ?g= link. random = the code was missing or unrecognised, so the client picked an arm uniformly at random (never a fixed default). debug = forced via ?debug=1. |
+| `arm` | enum | `mild`, `strong`, `autonomy` | Between-subjects framing arm. Comes from the recruiting link (change_spec_v4_final.md), not from a recruiter — v4 drops the recruiter dimension entirely. |
 | `order` | enum | `neutral_first`, `exp_first` | Presentation order counterbalance. Also determines which brand is "Brand 1" / "Brand 2" in the comparative block. |
 | `pairing` | enum | `aurevella_neutral`, `veloure_neutral` | Brand-condition pairing counterbalance: which brand carried the neutral pop-up. |
-| `brand_neutral` | string | — | Brand that showed the neutral pop-up. |
-| `brand_experimental` | string | — | Brand that showed the experimental (arm) pop-up. This is `exp_brand` in the recoding rules below. |
+| `brand_neutral` | string | — | Brand that showed the neutral pop-ups. |
+| `brand_experimental` | string | — | Brand that showed the experimental (arm) pop-ups. This is `exp_brand` in the recoding rules below. |
 
 ### Timing
 
@@ -268,7 +291,7 @@ Each is deliberate; each is here so the write-up can state it rather than discov
 
 | Column | Type | Scale / values | Description |
 | --- | --- | --- | --- |
-| `device` | string | — | Full user-agent string. Needed to interpret timing: PRD §11 notes mobile jank makes latency noisy, and device class is the first thing to check when it does. |
+| `device` | string | — | Full user-agent string. Needed to interpret timing: mobile jank makes latency noisy, and device class is the first thing to check when it does. |
 | `viewport` | string | — | CSS pixel viewport at start, "WxH". |
 | `dpr` | float | — | devicePixelRatio at session start. Together with viewport it reconstructs the physical size the participant actually saw the pop-up at. |
 | `touch` | bool | — | TRUE if the device reported touch support. Press-dwell is near-meaningless when TRUE (no hover on touch). |
@@ -277,79 +300,127 @@ Each is deliberate; each is here so the write-up can state it rather than discov
 
 | Column | Type | Scale / values | Description |
 | --- | --- | --- | --- |
-| `abandoned` | bool | — | TRUE when the row is a checkpoint that was never superseded by a completed submit. Session-level because per-block abandonment is not identifiable — a participant abandons a session, not a pop-up. |
+| `abandoned` | bool | — | TRUE when the row is a checkpoint that was never superseded by a completed submit. Session-level because per-block abandonment is not identifiable — a participant abandons a session, not a pop-up. See the per-pop-up `*_abandoned` columns below for which specific pop-ups were never reached. |
 | `abandoned_at_step` | string | — | Last step reached before the session stopped. Blank for completed sessions. |
-| `resumed_after_reload` | bool | — | TRUE if the participant reloaded mid-session and state was restored from localStorage. When the interrupted step was a pop-up or continuation screen, that block’s timing fields are NULL by design — never re-measured, because a re-rendered pop-up produces a clean-looking but meaningless latency. |
+| `resumed_after_reload` | bool | — | TRUE if the participant reloaded mid-session and state was restored from localStorage. When the interrupted step was a pop-up, confirmation or continuation screen, that pop-up’s timing fields are NULL by design — never re-measured, because a re-rendered pop-up produces a clean-looking but meaningless latency. |
 
 ### Behavioural — neutral block
 
 | Column | Type | Scale / values | Description |
 | --- | --- | --- | --- |
-| `neutral_condition` | enum | `neutral`, `mild`, `strong`, `autonomy` | Pop-up condition shown in this block. Redundant with arm+prefix; kept so each block row is self-describing. |
+| `neutral_condition` | enum | `neutral`, `mild`, `strong`, `autonomy` | Pop-up condition shown by both of this block's pop-ups. Redundant with arm+prefix; kept so each block row is self-describing. |
 | `neutral_brand` | string | — | Brand shown in this block. |
 | `neutral_block_position` | enum | `1`, `2` | Whether this block was seen first or second. Derivable from `order`; stored to make order effects trivial to model. |
-| `neutral_decline_label` | string | — | The exact decline-button string this participant saw. Stored verbatim as a provenance check that the manipulation rendered as intended. |
-| `neutral_choice` | enum | `accept`, `decline_button`, `close_x`, `backdrop`, `timeout` | How the pop-up was resolved. `timeout` = no committed action within the pop-up timeout (45s); PRD names an `abandon` code but gives no threshold, and without one a frozen participant loses the whole row. |
-| `neutral_response_code` | enum | `comply`, `resist`, `avoid`, `ignore` | Derived coding (PRD §5.2). Recomputed in analysis_starter.R from choice + latency + awareness so the Ignore threshold can be re-tuned; the stored value uses 1500 ms. |
-| `neutral_latency_ms` | float | — | Pop-up fully rendered → first committed action. THE primary behavioural DV. NULL means data loss, not "no response". |
-| `neutral_time_to_first_touch_ms` | float | — | Pop-up rendered → first pointerdown anywhere in the modal. |
-| `neutral_cancelled_taps` | int | — | pointerdown on a control → pointerup OUTSIDE that control. A deliberate slide-off: the participant started to press and changed their mind. This is the reactance-relevant signal. |
-| `neutral_pointer_cancels` | int | — | pointercancel events, logged SEPARATELY from cancelled_taps. On Android pointercancel fires whenever a touch becomes a scroll, so folding it into cancelled_taps (as PRD §5.1 does) would make that column largely a measure of scrolling. |
-| `neutral_press_dwell_ms` | float | — | Total pressed-but-not-released time on the decline button. Expect a noisy near-constant on touch devices — there is no hover, and tap-press duration is reflex rather than deliberation. Interpret with care. |
-| `neutral_post_dismiss_dwell_ms` | float | — | Time on the continuation screen before advancing. |
-| `neutral_continuation_auto_advanced` | bool | — | TRUE if the continuation screen timed out at 8s rather than being dismissed. Marks post_dismiss_dwell_ms as ceiling-censored. |
-| `neutral_scroll_events` | int | — | Scroll events during this block. |
-| `neutral_rage_taps` | int | — | Runs of ≥3 pointerdowns within 500 ms inside a 48 px box. Cheap frustration proxy. |
-| `neutral_popup_render_gap_ms` | float | — | Add-to-bag pointerdown → pop-up first painted frame (double-rAF after mount). PRD §11 excludes sessions with a >2 s render gap; this is the column that rule applies to. |
+| `neutral_decline_label` | string | — | The exact decline-button string this participant saw on BOTH of this block's pop-ups (change_spec_v4_final.md Part 2: decline wording is constant within a brand). Stored verbatim as a provenance check that the manipulation rendered as intended. |
 | `neutral_product_viewed` | string | — | SKU the participant added to the bag. |
 | `neutral_time_on_store_ms` | float | — | Storefront entry → add-to-bag. Engagement/investment proxy (Campbell 1995: personal investment drives inferences of manipulative intent). |
+
+### Behavioural — neutral block, checkout pop-up
+
+| Column | Type | Scale / values | Description |
+| --- | --- | --- | --- |
+| `neutral_p1_choice` | enum | `accept`, `decline_button`, `close_x`, `backdrop`, `timeout` | How this pop-up was resolved. `timeout` = no committed action within the pop-up timeout (45s). |
+| `neutral_p1_response_code` | enum | `comply`, `resist`, `avoid`, `ignore` | Derived coding. Recomputed in analysis_starter.R from choice + latency + awareness so the Ignore threshold can be re-tuned; the stored value uses 1500 ms. |
+| `neutral_p1_latency_ms` | float | — | This pop-up fully rendered → first committed action. A primary behavioural DV. NULL means data loss, not "no response". |
+| `neutral_p1_time_to_first_touch_ms` | float | — | Pop-up rendered → first pointerdown anywhere in the modal. |
+| `neutral_p1_cancelled_taps` | int | — | pointerdown on a control → pointerup OUTSIDE that control. A deliberate slide-off: the participant started to press and changed their mind. This is the reactance-relevant signal. |
+| `neutral_p1_pointer_cancels` | int | — | pointercancel events, logged SEPARATELY from cancelled_taps. On Android pointercancel fires whenever a touch becomes a scroll, so folding it into cancelled_taps would make that column largely a measure of scrolling. |
+| `neutral_p1_press_dwell_ms` | float | — | Total pressed-but-not-released time on the decline button. Expect a noisy near-constant on touch devices — there is no hover, and tap-press duration is reflex rather than deliberation. |
+| `neutral_p1_post_dismiss_dwell_ms` | float | — | For p1: time on the order-confirmation screen before pop-up 2 renders (necessarily short — there is no participant action in between). For p2: time on the real continuation screen before advancing. |
+| `neutral_p1_continuation_auto_advanced` | bool | — | p2 only: TRUE if the continuation screen timed out at 8s rather than being dismissed. Marks p2_post_dismiss_dwell_ms as ceiling-censored. Always FALSE for p1, which has no auto-advance concept. |
+| `neutral_p1_scroll_events` | int | — | Scroll events while this pop-up was open. |
+| `neutral_p1_rage_taps` | int | — | Runs of ≥3 pointerdowns within 500 ms inside a 48 px box. Cheap frustration proxy. |
+| `neutral_p1_popup_render_gap_ms` | float | — | Trigger action (add-to-bag for p1; pop-up 1 resolving for p2) → this pop-up's first painted frame (double-rAF after mount). Sessions with a >2s render gap are excluded (see codebook §10). |
+| `neutral_p1_abandoned` | bool | — | TRUE when this pop-up was never resolved (choice is blank) — either because the row is a checkpoint the participant dropped out of before reaching it, or dropped after it rendered but before responding. Always FALSE on a complete row. |
+
+### Behavioural — neutral block, order-confirmation pop-up
+
+| Column | Type | Scale / values | Description |
+| --- | --- | --- | --- |
+| `neutral_p2_choice` | enum | `accept`, `decline_button`, `close_x`, `backdrop`, `timeout` | How this pop-up was resolved. `timeout` = no committed action within the pop-up timeout (45s). |
+| `neutral_p2_response_code` | enum | `comply`, `resist`, `avoid`, `ignore` | Derived coding. Recomputed in analysis_starter.R from choice + latency + awareness so the Ignore threshold can be re-tuned; the stored value uses 1500 ms. |
+| `neutral_p2_latency_ms` | float | — | This pop-up fully rendered → first committed action. A primary behavioural DV. NULL means data loss, not "no response". |
+| `neutral_p2_time_to_first_touch_ms` | float | — | Pop-up rendered → first pointerdown anywhere in the modal. |
+| `neutral_p2_cancelled_taps` | int | — | pointerdown on a control → pointerup OUTSIDE that control. A deliberate slide-off: the participant started to press and changed their mind. This is the reactance-relevant signal. |
+| `neutral_p2_pointer_cancels` | int | — | pointercancel events, logged SEPARATELY from cancelled_taps. On Android pointercancel fires whenever a touch becomes a scroll, so folding it into cancelled_taps would make that column largely a measure of scrolling. |
+| `neutral_p2_press_dwell_ms` | float | — | Total pressed-but-not-released time on the decline button. Expect a noisy near-constant on touch devices — there is no hover, and tap-press duration is reflex rather than deliberation. |
+| `neutral_p2_post_dismiss_dwell_ms` | float | — | For p1: time on the order-confirmation screen before pop-up 2 renders (necessarily short — there is no participant action in between). For p2: time on the real continuation screen before advancing. |
+| `neutral_p2_continuation_auto_advanced` | bool | — | p2 only: TRUE if the continuation screen timed out at 8s rather than being dismissed. Marks p2_post_dismiss_dwell_ms as ceiling-censored. Always FALSE for p1, which has no auto-advance concept. |
+| `neutral_p2_scroll_events` | int | — | Scroll events while this pop-up was open. |
+| `neutral_p2_rage_taps` | int | — | Runs of ≥3 pointerdowns within 500 ms inside a 48 px box. Cheap frustration proxy. |
+| `neutral_p2_popup_render_gap_ms` | float | — | Trigger action (add-to-bag for p1; pop-up 1 resolving for p2) → this pop-up's first painted frame (double-rAF after mount). Sessions with a >2s render gap are excluded (see codebook §10). |
+| `neutral_p2_abandoned` | bool | — | TRUE when this pop-up was never resolved (choice is blank) — either because the row is a checkpoint the participant dropped out of before reaching it, or dropped after it rendered but before responding. Always FALSE on a complete row. |
 
 ### Self-report — neutral block
 
 | Column | Type | Scale / values | Description |
 | --- | --- | --- | --- |
-| `neutral_b1_guilt` | likert7 | 7-point intensity, 1 = not at all … 7 = very strongly (1 = Not at all … 7 = Very strongly) | I felt guilty about declining the offer. *Keeps H1 testable — without a guilt item there is no basis for calling this a guilt appeal, which is the entire premise of the Peng et al. prediction. Worded as guilt about DECLINING, not about the brand.* |
-| `neutral_b2_irritation` | likert7 | 7-point intensity, 1 = not at all … 7 = very strongly (1 = Not at all … 7 = Very strongly) | I felt irritated by the way this offer was presented. *THE MEDIATOR. Per Coulter & Pinto (1995), anger/irritation — not felt guilt — carries the damage to trust and purchase intention. Treat this as the mediator in analysis, not a descriptive aside.* |
-| `neutral_b3_manipulation` | likert7 | 7-point Likert, 1 = strongly disagree … 7 = strongly agree (1 = Strongly disagree … 7 = Strongly agree) | The way this offer was presented was intended to pressure me into accepting it. *Tests H3 (perceived manipulative intent).* |
+| `neutral_b1_guilt` | likert7 | 7-point intensity, 1 = not at all … 7 = very strongly (1 = Not at all … 7 = Very strongly) | I felt guilty about declining this brand's offers. *Keeps H1 testable — without a guilt item there is no basis for calling this a guilt appeal, which is the entire premise of the Peng et al. prediction. Worded as guilt about DECLINING, not about the brand. change_spec_v4_final.md Part 4 moves the stem to brand level: with two pop-ups per brand now sharing the same decline wording, "this brand's offers" (plural) is the accurate referent, not any single pop-up.* |
+| `neutral_b2_irritation` | likert7 | 7-point intensity, 1 = not at all … 7 = very strongly (1 = Not at all … 7 = Very strongly) | I felt irritated by the way this brand presented its offers. *THE MEDIATOR. Per Coulter & Pinto (1995), anger/irritation — not felt guilt — carries the damage to trust and purchase intention. Treat this as the mediator in analysis, not a descriptive aside.* |
+| `neutral_b3_manipulation` | likert7 | 7-point Likert, 1 = strongly disagree … 7 = strongly agree (1 = Strongly disagree … 7 = Strongly agree) | The way this brand presented its offers was intended to pressure me into accepting. *Tests H3 (perceived manipulative intent).* |
 | `neutral_b4_trust` | likert7 | 7-point Likert, 1 = strongly disagree … 7 = strongly agree (1 = Strongly disagree … 7 = Strongly agree) | I would trust this brand. *Deliberately LEVEL-framed, not change-framed ("compared with before" etc.). The within-person difference score (experimental − neutral) is what measures the trust penalty; if the item itself also contained a comparison, the two would nest and become uninterpretable. A level item also lets trust go UP, which H4 predicts for the autonomy arm — a change-framed item cannot detect that.* |
 | `neutral_b5_raw` | enum | `buy`, `compare`, `competitor`, `avoid`, `not_sure` | Downstream behavioural choice: what the participant says they would do next. |
 | `neutral_b5_ord` | int | — | Ordinal recode of b5_raw: buy=3, compare=2, competitor=1, avoid=0, not_sure=blank. Feeds diff_b5. |
-| `neutral_b6_open` | string | — | Optional open-ended: "What, if anything, stood out to you about the way the offer was presented?" Blank = skipped, which is always allowed. |
+| `neutral_b6_open` | string | — | Optional open-ended, asked once per brand. Blank = skipped, which is always allowed. |
 
 ### Behavioural — experimental block
 
 | Column | Type | Scale / values | Description |
 | --- | --- | --- | --- |
-| `exp_condition` | enum | `neutral`, `mild`, `strong`, `autonomy` | Pop-up condition shown in this block. Redundant with arm+prefix; kept so each block row is self-describing. |
+| `exp_condition` | enum | `neutral`, `mild`, `strong`, `autonomy` | Pop-up condition shown by both of this block's pop-ups. Redundant with arm+prefix; kept so each block row is self-describing. |
 | `exp_brand` | string | — | Brand shown in this block. |
 | `exp_block_position` | enum | `1`, `2` | Whether this block was seen first or second. Derivable from `order`; stored to make order effects trivial to model. |
-| `exp_decline_label` | string | — | The exact decline-button string this participant saw. Stored verbatim as a provenance check that the manipulation rendered as intended. |
-| `exp_choice` | enum | `accept`, `decline_button`, `close_x`, `backdrop`, `timeout` | How the pop-up was resolved. `timeout` = no committed action within the pop-up timeout (45s); PRD names an `abandon` code but gives no threshold, and without one a frozen participant loses the whole row. |
-| `exp_response_code` | enum | `comply`, `resist`, `avoid`, `ignore` | Derived coding (PRD §5.2). Recomputed in analysis_starter.R from choice + latency + awareness so the Ignore threshold can be re-tuned; the stored value uses 1500 ms. |
-| `exp_latency_ms` | float | — | Pop-up fully rendered → first committed action. THE primary behavioural DV. NULL means data loss, not "no response". |
-| `exp_time_to_first_touch_ms` | float | — | Pop-up rendered → first pointerdown anywhere in the modal. |
-| `exp_cancelled_taps` | int | — | pointerdown on a control → pointerup OUTSIDE that control. A deliberate slide-off: the participant started to press and changed their mind. This is the reactance-relevant signal. |
-| `exp_pointer_cancels` | int | — | pointercancel events, logged SEPARATELY from cancelled_taps. On Android pointercancel fires whenever a touch becomes a scroll, so folding it into cancelled_taps (as PRD §5.1 does) would make that column largely a measure of scrolling. |
-| `exp_press_dwell_ms` | float | — | Total pressed-but-not-released time on the decline button. Expect a noisy near-constant on touch devices — there is no hover, and tap-press duration is reflex rather than deliberation. Interpret with care. |
-| `exp_post_dismiss_dwell_ms` | float | — | Time on the continuation screen before advancing. |
-| `exp_continuation_auto_advanced` | bool | — | TRUE if the continuation screen timed out at 8s rather than being dismissed. Marks post_dismiss_dwell_ms as ceiling-censored. |
-| `exp_scroll_events` | int | — | Scroll events during this block. |
-| `exp_rage_taps` | int | — | Runs of ≥3 pointerdowns within 500 ms inside a 48 px box. Cheap frustration proxy. |
-| `exp_popup_render_gap_ms` | float | — | Add-to-bag pointerdown → pop-up first painted frame (double-rAF after mount). PRD §11 excludes sessions with a >2 s render gap; this is the column that rule applies to. |
+| `exp_decline_label` | string | — | The exact decline-button string this participant saw on BOTH of this block's pop-ups (change_spec_v4_final.md Part 2: decline wording is constant within a brand). Stored verbatim as a provenance check that the manipulation rendered as intended. |
 | `exp_product_viewed` | string | — | SKU the participant added to the bag. |
 | `exp_time_on_store_ms` | float | — | Storefront entry → add-to-bag. Engagement/investment proxy (Campbell 1995: personal investment drives inferences of manipulative intent). |
+
+### Behavioural — experimental block, checkout pop-up
+
+| Column | Type | Scale / values | Description |
+| --- | --- | --- | --- |
+| `exp_p1_choice` | enum | `accept`, `decline_button`, `close_x`, `backdrop`, `timeout` | How this pop-up was resolved. `timeout` = no committed action within the pop-up timeout (45s). |
+| `exp_p1_response_code` | enum | `comply`, `resist`, `avoid`, `ignore` | Derived coding. Recomputed in analysis_starter.R from choice + latency + awareness so the Ignore threshold can be re-tuned; the stored value uses 1500 ms. |
+| `exp_p1_latency_ms` | float | — | This pop-up fully rendered → first committed action. A primary behavioural DV. NULL means data loss, not "no response". |
+| `exp_p1_time_to_first_touch_ms` | float | — | Pop-up rendered → first pointerdown anywhere in the modal. |
+| `exp_p1_cancelled_taps` | int | — | pointerdown on a control → pointerup OUTSIDE that control. A deliberate slide-off: the participant started to press and changed their mind. This is the reactance-relevant signal. |
+| `exp_p1_pointer_cancels` | int | — | pointercancel events, logged SEPARATELY from cancelled_taps. On Android pointercancel fires whenever a touch becomes a scroll, so folding it into cancelled_taps would make that column largely a measure of scrolling. |
+| `exp_p1_press_dwell_ms` | float | — | Total pressed-but-not-released time on the decline button. Expect a noisy near-constant on touch devices — there is no hover, and tap-press duration is reflex rather than deliberation. |
+| `exp_p1_post_dismiss_dwell_ms` | float | — | For p1: time on the order-confirmation screen before pop-up 2 renders (necessarily short — there is no participant action in between). For p2: time on the real continuation screen before advancing. |
+| `exp_p1_continuation_auto_advanced` | bool | — | p2 only: TRUE if the continuation screen timed out at 8s rather than being dismissed. Marks p2_post_dismiss_dwell_ms as ceiling-censored. Always FALSE for p1, which has no auto-advance concept. |
+| `exp_p1_scroll_events` | int | — | Scroll events while this pop-up was open. |
+| `exp_p1_rage_taps` | int | — | Runs of ≥3 pointerdowns within 500 ms inside a 48 px box. Cheap frustration proxy. |
+| `exp_p1_popup_render_gap_ms` | float | — | Trigger action (add-to-bag for p1; pop-up 1 resolving for p2) → this pop-up's first painted frame (double-rAF after mount). Sessions with a >2s render gap are excluded (see codebook §10). |
+| `exp_p1_abandoned` | bool | — | TRUE when this pop-up was never resolved (choice is blank) — either because the row is a checkpoint the participant dropped out of before reaching it, or dropped after it rendered but before responding. Always FALSE on a complete row. |
+
+### Behavioural — experimental block, order-confirmation pop-up
+
+| Column | Type | Scale / values | Description |
+| --- | --- | --- | --- |
+| `exp_p2_choice` | enum | `accept`, `decline_button`, `close_x`, `backdrop`, `timeout` | How this pop-up was resolved. `timeout` = no committed action within the pop-up timeout (45s). |
+| `exp_p2_response_code` | enum | `comply`, `resist`, `avoid`, `ignore` | Derived coding. Recomputed in analysis_starter.R from choice + latency + awareness so the Ignore threshold can be re-tuned; the stored value uses 1500 ms. |
+| `exp_p2_latency_ms` | float | — | This pop-up fully rendered → first committed action. A primary behavioural DV. NULL means data loss, not "no response". |
+| `exp_p2_time_to_first_touch_ms` | float | — | Pop-up rendered → first pointerdown anywhere in the modal. |
+| `exp_p2_cancelled_taps` | int | — | pointerdown on a control → pointerup OUTSIDE that control. A deliberate slide-off: the participant started to press and changed their mind. This is the reactance-relevant signal. |
+| `exp_p2_pointer_cancels` | int | — | pointercancel events, logged SEPARATELY from cancelled_taps. On Android pointercancel fires whenever a touch becomes a scroll, so folding it into cancelled_taps would make that column largely a measure of scrolling. |
+| `exp_p2_press_dwell_ms` | float | — | Total pressed-but-not-released time on the decline button. Expect a noisy near-constant on touch devices — there is no hover, and tap-press duration is reflex rather than deliberation. |
+| `exp_p2_post_dismiss_dwell_ms` | float | — | For p1: time on the order-confirmation screen before pop-up 2 renders (necessarily short — there is no participant action in between). For p2: time on the real continuation screen before advancing. |
+| `exp_p2_continuation_auto_advanced` | bool | — | p2 only: TRUE if the continuation screen timed out at 8s rather than being dismissed. Marks p2_post_dismiss_dwell_ms as ceiling-censored. Always FALSE for p1, which has no auto-advance concept. |
+| `exp_p2_scroll_events` | int | — | Scroll events while this pop-up was open. |
+| `exp_p2_rage_taps` | int | — | Runs of ≥3 pointerdowns within 500 ms inside a 48 px box. Cheap frustration proxy. |
+| `exp_p2_popup_render_gap_ms` | float | — | Trigger action (add-to-bag for p1; pop-up 1 resolving for p2) → this pop-up's first painted frame (double-rAF after mount). Sessions with a >2s render gap are excluded (see codebook §10). |
+| `exp_p2_abandoned` | bool | — | TRUE when this pop-up was never resolved (choice is blank) — either because the row is a checkpoint the participant dropped out of before reaching it, or dropped after it rendered but before responding. Always FALSE on a complete row. |
 
 ### Self-report — experimental block
 
 | Column | Type | Scale / values | Description |
 | --- | --- | --- | --- |
-| `exp_b1_guilt` | likert7 | 7-point intensity, 1 = not at all … 7 = very strongly (1 = Not at all … 7 = Very strongly) | I felt guilty about declining the offer. *Keeps H1 testable — without a guilt item there is no basis for calling this a guilt appeal, which is the entire premise of the Peng et al. prediction. Worded as guilt about DECLINING, not about the brand.* |
-| `exp_b2_irritation` | likert7 | 7-point intensity, 1 = not at all … 7 = very strongly (1 = Not at all … 7 = Very strongly) | I felt irritated by the way this offer was presented. *THE MEDIATOR. Per Coulter & Pinto (1995), anger/irritation — not felt guilt — carries the damage to trust and purchase intention. Treat this as the mediator in analysis, not a descriptive aside.* |
-| `exp_b3_manipulation` | likert7 | 7-point Likert, 1 = strongly disagree … 7 = strongly agree (1 = Strongly disagree … 7 = Strongly agree) | The way this offer was presented was intended to pressure me into accepting it. *Tests H3 (perceived manipulative intent).* |
+| `exp_b1_guilt` | likert7 | 7-point intensity, 1 = not at all … 7 = very strongly (1 = Not at all … 7 = Very strongly) | I felt guilty about declining this brand's offers. *Keeps H1 testable — without a guilt item there is no basis for calling this a guilt appeal, which is the entire premise of the Peng et al. prediction. Worded as guilt about DECLINING, not about the brand. change_spec_v4_final.md Part 4 moves the stem to brand level: with two pop-ups per brand now sharing the same decline wording, "this brand's offers" (plural) is the accurate referent, not any single pop-up.* |
+| `exp_b2_irritation` | likert7 | 7-point intensity, 1 = not at all … 7 = very strongly (1 = Not at all … 7 = Very strongly) | I felt irritated by the way this brand presented its offers. *THE MEDIATOR. Per Coulter & Pinto (1995), anger/irritation — not felt guilt — carries the damage to trust and purchase intention. Treat this as the mediator in analysis, not a descriptive aside.* |
+| `exp_b3_manipulation` | likert7 | 7-point Likert, 1 = strongly disagree … 7 = strongly agree (1 = Strongly disagree … 7 = Strongly agree) | The way this brand presented its offers was intended to pressure me into accepting. *Tests H3 (perceived manipulative intent).* |
 | `exp_b4_trust` | likert7 | 7-point Likert, 1 = strongly disagree … 7 = strongly agree (1 = Strongly disagree … 7 = Strongly agree) | I would trust this brand. *Deliberately LEVEL-framed, not change-framed ("compared with before" etc.). The within-person difference score (experimental − neutral) is what measures the trust penalty; if the item itself also contained a comparison, the two would nest and become uninterpretable. A level item also lets trust go UP, which H4 predicts for the autonomy arm — a change-framed item cannot detect that.* |
 | `exp_b5_raw` | enum | `buy`, `compare`, `competitor`, `avoid`, `not_sure` | Downstream behavioural choice: what the participant says they would do next. |
 | `exp_b5_ord` | int | — | Ordinal recode of b5_raw: buy=3, compare=2, competitor=1, avoid=0, not_sure=blank. Feeds diff_b5. |
-| `exp_b6_open` | string | — | Optional open-ended: "What, if anything, stood out to you about the way the offer was presented?" Blank = skipped, which is always allowed. |
+| `exp_b6_open` | string | — | Optional open-ended, asked once per brand. Blank = skipped, which is always allowed. |
 
 ### Difference scores
 
@@ -360,6 +431,9 @@ Each is deliberate; each is here so the write-up can state it rather than discov
 | `diff_b3_manipulation` | float | — | exp_b3_manipulation − neutral_b3_manipulation. THE PRIMARY OUTCOME for this measure (within-person, experimental minus neutral). |
 | `diff_b4_trust` | float | — | exp_b4_trust − neutral_b4_trust. THE PRIMARY OUTCOME for this measure (within-person, experimental minus neutral). |
 | `diff_b5` | float | — | exp_b5_ord − neutral_b5_ord. Blank if either side is not_sure. |
+| `neutral_accepts` | int | — | Count of the neutral block's two pop-ups accepted (0-2). |
+| `exp_accepts` | int | — | Count of the experimental block's two pop-ups accepted (0-2). |
+| `diff_accepts` | int | — | exp_accepts − neutral_accepts. A second, purely behavioural acceptance-count outcome alongside the rated-item difference scores. |
 
 ### Awareness
 
@@ -367,14 +441,14 @@ Each is deliberate; each is here so the write-up can state it rather than discov
 | --- | --- | --- | --- |
 | `aware_brand1_raw` | enum | `neutral`, `mild`, `strong`, `autonomy`, `dont_remember` | Which statement the participant chose for the brand shown FIRST (position 1, not condition). |
 | `aware_brand2_raw` | enum | `neutral`, `mild`, `strong`, `autonomy`, `dont_remember` | Same, for the brand shown SECOND (position 2). |
-| `aware_neutral_correct` | bool | — | TRUE if the participant correctly identified the statement for whichever brand carried the NEUTRAL pop-up (recoded by condition, not position). "Don't remember" counts as incorrect. |
-| `aware_exp_correct` | bool | — | Same, for the brand that carried the EXPERIMENTAL pop-up. Feeds the "Ignore" response code. |
+| `aware_neutral_correct` | bool | — | TRUE if the participant correctly identified the statement for whichever brand carried the NEUTRAL pop-ups (recoded by condition, not position). "Don't remember" counts as incorrect. |
+| `aware_exp_correct` | bool | — | Same, for the brand that carried the EXPERIMENTAL pop-ups. Feeds the "Ignore" response code. |
 
 ### Comparative
 
 | Column | Type | Scale / values | Description |
 | --- | --- | --- | --- |
-| `c1_raw` | enum | `aurevella`, `veloure`, `both`, `neither`, `dont_remember` | Raw answer: which brand's pop-up felt more manipulative. A brand id, or a sentinel (both, neither, dont_remember). |
+| `c1_raw` | enum | `aurevella`, `veloure`, `both`, `neither`, `dont_remember` | Raw answer: which brand's pop-ups felt more manipulative. A brand id, or a sentinel (both, neither, dont_remember). |
 | `c2_raw` | enum | `aurevella`, `veloure`, `both`, `neither` | Raw answer: which brand the participant would trust more. |
 | `c3_raw` | int | 1 = much less … 4 = about the same … 7 = much more | Raw answer: trust in Brand 1 (position 1) compared with Brand 2 (position 2). NOT yet relative to condition — see c3_recoded. |
 | `c4_raw` | enum | `aurevella`, `veloure`, `compare_further`, `neither` | Raw answer: which brand the participant would choose for their next purchase. |
@@ -403,8 +477,8 @@ Each is deliberate; each is here so the write-up can state it rather than discov
 
 | Column | Type | Scale / values | Description |
 | --- | --- | --- | --- |
-| `age_band` | enum | `18_24`, `25_34`, `35_44`, `45_plus`, `prefer_not` | Self-reported age band. Collected as a band rather than a number so no participant is individually identifiable in a sample of 40. |
-| `gender` | enum | `woman`, `man`, `non_binary`, `prefer_not` | Self-reported gender, including a prefer-not-to-say option. Covariate only; the design is not powered to test gender differences at N=40. |
+| `age_band` | enum | `18_24`, `25_34`, `35_44`, `45_plus`, `prefer_not` | Self-reported age band. Collected as a band rather than a number so no participant is individually identifiable in a small sample. |
+| `gender` | enum | `woman`, `man`, `non_binary`, `prefer_not` | Self-reported gender, including a prefer-not-to-say option. Covariate only; the design is not powered to test gender differences at this sample size. |
 | `occupation` | enum | `student`, `working`, `both`, `other` | Student / working status. |
 
 ### Raw

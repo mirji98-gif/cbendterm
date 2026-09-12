@@ -1,5 +1,12 @@
 /**
  * Session state shape. One object, mirrored to localStorage on every change.
+ *
+ * change_spec_v4_final.md Part 2: each brand now shows TWO pop-ups (p1 at
+ * checkout, p2 on the order-confirmation screen) instead of one, so the
+ * behavioural measurement that used to live flat on BlockData is now split
+ * into a PopupResult per pop-up. Self-report (ratings/downstream/open-ended)
+ * stays once per brand — Part 4 moves the item STEMS to brand level, but the
+ * measurement itself was already once per block.
  */
 import type { Arm, BlockOrder, BrandPairing, Choice, PopupCondition } from '../data/conditions';
 import type { BrandId } from '../data/brands';
@@ -8,9 +15,10 @@ import type { AwarenessAnswer } from '../data/awareness';
 import type { ComparativeRaw } from '../data/comparative';
 
 /**
- * 'group_code' = arm and recruiter decoded from ?g=. 'random' = the code was
- * missing or unrecognised, so the client picked an arm uniformly at random
- * and there is no recruiter to attribute. 'debug' = forced via ?debug=1.
+ * 'group_code' = arm decoded from ?g=. 'random' = the code was missing or
+ * unrecognised, so the client picked an arm uniformly at random. 'debug' =
+ * forced via ?debug=1. v4 drops the recruiter dimension entirely — see
+ * change_spec_v4_final.md §1.
  */
 export type AssignmentSource = 'group_code' | 'random' | 'debug';
 
@@ -24,39 +32,72 @@ export interface Assignment {
 /** Blocks are keyed by CONDITION, matching the CSV prefixes. */
 export type BlockKey = 'neutral' | 'exp';
 
-export interface BlockData {
-  key: BlockKey;
-  condition: PopupCondition;
-  brandId: BrandId;
-  /** 1 = seen first, 2 = seen second. */
-  position: 1 | 2;
-  /** The exact decline string rendered. Stored as a provenance check. */
-  declineLabel: string;
+/** Which of the two pop-ups within a block: p1 = checkout, p2 = order confirmation. */
+export type PopupKey = 'p1' | 'p2';
 
-  // ── behavioural (all times from performance.now(), never Date.now) ──
+export interface PopupResult {
   choice: Choice | null;
   latencyMs: number | null;
   timeToFirstTouchMs: number | null;
   cancelledTaps: number;
   pointerCancels: number;
   pressDwellMs: number;
+  /**
+   * Time on the screen that followed this pop-up. For p1 that's the
+   * order-confirmation screen (ends the instant p2 renders on it — there is
+   * no participant action in between, so this is necessarily short); for p2
+   * it's the real Continuation screen, with a "Continue" button and an 8s
+   * auto-advance, exactly like the pre-v4 single pop-up per block.
+   */
   postDismissDwellMs: number | null;
+  /** Only ever meaningful for p2 — p1's "dwell" has no auto-advance concept. */
   continuationAutoAdvanced: boolean | null;
   scrollEvents: number;
   rageTaps: number;
   popupRenderGapMs: number | null;
-  productViewed: string | null;
-  timeOnStoreMs: number | null;
-
   /**
-   * TRUE when a reload interrupted this block mid-measurement. The timing
+   * TRUE when a reload interrupted THIS pop-up mid-measurement. The timing
    * fields above are then left NULL rather than re-measured: a re-rendered
    * pop-up would produce a clean-looking but entirely meaningless latency,
    * and a flagged null is worth more than a plausible lie.
    */
   timingInvalidated: boolean;
+}
 
-  // ── self-report v2: B1–B4 rated, B5 downstream choice, B6 open-ended ──
+export function emptyPopupResult(): PopupResult {
+  return {
+    choice: null,
+    latencyMs: null,
+    timeToFirstTouchMs: null,
+    cancelledTaps: 0,
+    pointerCancels: 0,
+    pressDwellMs: 0,
+    postDismissDwellMs: null,
+    continuationAutoAdvanced: null,
+    scrollEvents: 0,
+    rageTaps: 0,
+    popupRenderGapMs: null,
+    timingInvalidated: false,
+  };
+}
+
+export interface BlockData {
+  key: BlockKey;
+  condition: PopupCondition;
+  brandId: BrandId;
+  /** 1 = seen first, 2 = seen second. */
+  position: 1 | 2;
+  /** The exact decline string rendered on BOTH of this block's pop-ups. */
+  declineLabel: string;
+
+  productViewed: string | null;
+  timeOnStoreMs: number | null;
+
+  p1: PopupResult;
+  p2: PopupResult;
+
+  // ── self-report v2: B1–B4 rated, B5 downstream choice, B6 open-ended.
+  // Asked once per BRAND (Part 4), not once per pop-up.
   ratings: Record<RatedItemId, number | null>;
   downstreamChoice: DownstreamChoice | null;
   /** Optional, skippable immediately — no minimum length, no forced wait. */
@@ -94,6 +135,8 @@ export interface LoggedEvent {
   type: string;
   /** Which block the event belongs to, when applicable. */
   block?: BlockKey;
+  /** Which pop-up within the block, when applicable. */
+  popup?: PopupKey;
   payload?: Record<string, unknown>;
 }
 
@@ -114,12 +157,16 @@ export type Step =
   | 'instructions'
   | 'store_1'
   | 'product_1'
-  | 'popup_1'
+  /** Product page + pop-up 1 overlay. Fires on checkout intent (add-to-bag). */
+  | 'checkout_1'
+  /** Order-confirmation screen + pop-up 2 overlay. */
+  | 'confirm_1'
   | 'continuation_1'
   | 'block_1'
   | 'store_2'
   | 'product_2'
-  | 'popup_2'
+  | 'checkout_2'
+  | 'confirm_2'
   | 'continuation_2'
   | 'block_2'
   | 'awareness'
@@ -135,7 +182,6 @@ export interface Session {
   schema: number;
   step: Step;
   participantId: string;
-  recruiterId: string;
   isDebug: boolean;
   assignment: Assignment | null;
   /** Null until assignment resolves. Keyed by condition. */

@@ -42,14 +42,24 @@ export const DECLINE_COPY: Record<PopupCondition, string> = {
 };
 
 /**
- * Invariant pop-up copy. Shared by every condition by construction: the
+ * Invariant pop-up copy — one set per POP-UP (change_spec_v4_final.md Part 2:
+ * each brand now shows two pop-ups), shared by every ARM by construction: the
  * component reads these constants directly rather than receiving them as
- * props, so a per-condition override is not expressible.
+ * props, so a per-arm override is not expressible. Both are worded to
+ * describe collecting contact info, but neither pop-up actually renders an
+ * input or stores anything typed — accepting just shows a confirmation.
  */
-export const POPUP_INVARIANT = {
-  headline: 'Flat 15% off your first order',
-  subcopy: 'Applies automatically at checkout. One use per customer.',
+export const POPUP1_INVARIANT = {
+  headline: 'Get 15% off this order',
+  subcopy: "Add your email and we'll apply the discount at checkout.",
   acceptLabel: 'Yes, apply 15% off',
+  closeAriaLabel: 'Close',
+} as const;
+
+export const POPUP2_INVARIANT = {
+  headline: 'Get 15% off your next order',
+  subcopy: "Follow us and we'll send the code to your feed.",
+  acceptLabel: 'Yes, follow and save',
   closeAriaLabel: 'Close',
 } as const;
 

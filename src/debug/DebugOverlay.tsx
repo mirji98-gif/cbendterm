@@ -23,16 +23,17 @@ export function DebugOverlay(): JSX.Element {
           onClick={() => setOpen((o) => !o)}
           className="pointer-events-auto text-[10px] font-mono bg-black/85 text-lime-300 px-2 py-1 rounded shadow"
         >
-          {a ? `${a.arm}/${a.order}/${a.pairing} · r${session.recruiterId || '—'} · ${a.source}` : 'unassigned'}
+          {a ? `${a.arm}/${a.order}/${a.pairing} · ${a.source}` : 'unassigned'}
           {' · '}{session.step}{open ? ' ▾' : ' ▸'}
         </button>
         {open && (
           <div className="pointer-events-auto mt-1 max-h-[45dvh] overflow-y-auto bg-black/90 text-[10px] font-mono text-neutral-200 rounded p-2 space-y-0.5">
             {session.blocks && (
               <p className="text-amber-300 pb-1">
-                neutral: {session.blocks.neutral.choice ?? '—'} @{' '}
-                {session.blocks.neutral.latencyMs ?? '—'}ms · exp:{' '}
-                {session.blocks.exp.choice ?? '—'} @ {session.blocks.exp.latencyMs ?? '—'}ms
+                neutral: p1={session.blocks.neutral.p1.choice ?? '—'}@{session.blocks.neutral.p1.latencyMs ?? '—'}ms
+                {' '}p2={session.blocks.neutral.p2.choice ?? '—'}@{session.blocks.neutral.p2.latencyMs ?? '—'}ms
+                {' · '}exp: p1={session.blocks.exp.p1.choice ?? '—'}@{session.blocks.exp.p1.latencyMs ?? '—'}ms
+                {' '}p2={session.blocks.exp.p2.choice ?? '—'}@{session.blocks.exp.p2.latencyMs ?? '—'}ms
               </p>
             )}
             {recent.map((e, i) => (

@@ -1,45 +1,70 @@
 /**
  * THE DISCOUNT POP-UP — the experimental stimulus.
  *
- * ╔═══════════════════════════════════════════════════════════════════════╗
- * ║  The ONLY thing that differs between conditions is `block.declineLabel`║
- * ╚═══════════════════════════════════════════════════════════════════════╝
+ * change_spec_v4_final.md Part 2: each brand now shows TWO pop-ups. This
+ * component renders either one, selected by the `popup` prop — `p1` (fires on
+ * checkout intent, i.e. add-to-bag) or `p2` (fires on the order-confirmation
+ * screen). Both read their headline/subcopy/accept-label from an INVARIANT
+ * constant (POPUP1_INVARIANT / POPUP2_INVARIANT) rather than a prop, so a
+ * per-arm override of anything but the decline label is not expressible.
  *
- * Headline, subcopy, accept label and close affordance are read straight from
- * POPUP_INVARIANT — they are not props, so a per-condition override is not
- * expressible in this component's interface. Popup.identical.test.tsx renders
- * all four conditions, blanks the decline label, and asserts the resulting DOM
- * is byte-identical.
+ * ╔═══════════════════════════════════════════════════════════════════════╗
+ * ║  The ONLY thing that differs between ARMS is `block.declineLabel`.     ║
+ * ╚═══════════════════════════════════════════════════════════════════════╝
+ * Both of a block's pop-ups show the SAME decline wording (Part 2: "never mix
+ * levels within a brand"). Popup.identical.test.tsx renders all four
+ * conditions for both p1 and p2, blanks the decline label, and asserts the
+ * resulting DOM is byte-identical.
  *
  * The two buttons are deliberately IDENTICAL in weight — same border, same
  * background, same text colour, same size. A filled "accept" against an
  * outlined "decline" would be more realistic commercially, but it is itself a
  * dark pattern (visual interference) and would confound the wording
- * manipulation with a prominence manipulation (PRD §6, accessibility floor).
+ * manipulation with a prominence manipulation.
  *
- * The pop-up fires on add-to-bag, not on page load, so the participant has
- * already invested effort — Campbell (1995) shows that personal investment is
- * what drives inferences of manipulative intent.
+ * ┌──────────────────────────────────────────────────────────────────────┐
+ * │ DELIBERATE DEVIATION FROM change_spec_v4_final.md Part 7.             │
+ * └──────────────────────────────────────────────────────────────────────┘
+ * Part 7's pop-up section calls for "Accept filled in the accent. Decline
+ * outlined in --line with --ink text" — but Part 6 (do-not-change item 3,
+ * which the spec's own Part 0 says Part 7 is constrained by) says exactly
+ * that pattern — a filled accept against an outlined decline — is a second
+ * dark pattern that confounds the wording manipulation with a prominence
+ * manipulation. Both buttons stay visually IDENTICAL here (same outline,
+ * same weight); only their sizing/spacing/tokens were updated for Part 7.
+ * Flagged rather than silently resolved either way — see the PR/commit notes.
+ *
+ * Accepting either pop-up shows a confirmation on the NEXT screen (the
+ * order-confirmation screen for p1, the continuation screen for p2) rather
+ * than here — no email address or social handle is ever collected, and no
+ * text input is ever rendered (change_spec_v4_final.md Part 2). Resolving
+ * (accept, decline, close, backdrop, timeout) always advances immediately,
+ * exactly like decline does, so the measured latency is unaffected by
+ * whatever the following screen shows.
  */
 import { useCallback, useEffect, useRef } from 'react';
-import { POPUP_INVARIANT, type Choice } from '../data/conditions';
+import { POPUP1_INVARIANT, POPUP2_INVARIANT, type Choice } from '../data/conditions';
 import { BRANDS } from '../data/brands';
 import { TIMING } from '../data/config';
 import { afterPaint } from '../instrumentation/clock';
 import { usePopupTelemetry } from '../instrumentation/popupTelemetry';
 import { useSession } from '../machine/SessionContext';
-import type { BlockKey } from '../machine/types';
+import type { BlockKey, PopupKey } from '../machine/types';
 
-/** Identical for both buttons. ≥44px tap target; contrast is symmetric. */
+/**
+ * Identical for both buttons — 48px tall (change_spec_v4_final.md Part 7),
+ * ≥44px tap target either way; contrast is symmetric.
+ */
 const BUTTON_CLASS =
-  'w-full min-h-[52px] px-4 py-3 rounded-lg border-[1.5px] border-neutral-900 ' +
-  'bg-white text-neutral-900 text-[15px] font-medium leading-snug ' +
-  'transition-colors duration-150 active:bg-neutral-100';
+  'w-full min-h-[48px] px-4 py-3 rounded border-[1.5px] border-ink ' +
+  'bg-card text-ink text-[15px] font-medium leading-snug ' +
+  'transition-colors duration-150 active:bg-black/5';
 
-export function Popup({ blockKey }: { blockKey: BlockKey }): JSX.Element {
+export function Popup({ blockKey, popup }: { blockKey: BlockKey; popup: PopupKey }): JSX.Element {
   const api = useSession();
   const block = api.session.blocks![blockKey]!;
   const brand = BRANDS[block.brandId];
+  const invariant = popup === 'p1' ? POPUP1_INVARIANT : POPUP2_INVARIANT;
   const tel = usePopupTelemetry();
   const resolved = useRef(false);
 
@@ -48,27 +73,28 @@ export function Popup({ blockKey }: { blockKey: BlockKey }): JSX.Element {
       if (resolved.current) return;
       resolved.current = true;
       const latency = tel.latency();
-      api.popupTelemetry(blockKey, tel.snapshot());
-      api.popupResolved(blockKey, choice, latency);
+      api.popupTelemetry(blockKey, popup, tel.snapshot());
+      api.popupResolved(blockKey, popup, choice, latency);
     },
-    [api, blockKey, tel],
+    [api, blockKey, popup, tel],
   );
 
   // Zero point for latency_ms: the first COMPOSITED frame, not mount.
   useEffect(() => {
     afterPaint((t) => {
       tel.markRendered(t);
-      const addToBag = [...api.session.eventLog]
+      // p1's trigger is add-to-bag; p2's trigger is p1 resolving.
+      const triggerType = popup === 'p1' ? 'add_to_bag' : 'popup_resolved';
+      const trigger = [...api.session.eventLog]
         .reverse()
-        .find((e) => e.type === 'add_to_bag' && e.block === blockKey);
-      api.popupRendered(blockKey, addToBag ? t - addToBag.t : 0);
+        .find((e) => e.type === triggerType && e.block === blockKey);
+      api.popupRendered(blockKey, popup, trigger ? t - trigger.t : 0);
     });
     // Intentionally mount-only: re-running would re-zero the clock.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Auto-advance. PRD defines an `abandon` code but no threshold; without one
-  // a participant who freezes loses the entire row.
+  // Auto-advance. Without a timeout a participant who freezes loses the row.
   useEffect(() => {
     const id = window.setTimeout(() => resolve('timeout'), TIMING.popupTimeoutMs);
     return () => window.clearTimeout(id);
@@ -86,40 +112,40 @@ export function Popup({ blockKey }: { blockKey: BlockKey }): JSX.Element {
         role="dialog"
         aria-modal="true"
         aria-labelledby="offer-headline"
-        className="relative w-full sm:max-w-[420px] bg-white rounded-t-2xl sm:rounded-2xl
-                   px-5 pt-6 pb-5 safe-bottom sm:pb-6 animate-sheet-in shadow-xl"
+        className="relative w-full sm:max-w-[420px] bg-card rounded-t-2xl sm:rounded-2xl
+                   px-5 pt-6 pb-5 safe-bottom sm:pb-6 animate-sheet-in shadow-lg"
       >
         <button
           type="button"
           data-control="close"
-          aria-label={POPUP_INVARIANT.closeAriaLabel}
+          aria-label={invariant.closeAriaLabel}
           onClick={() => resolve('close_x')}
           className="absolute top-3 right-3 w-11 h-11 flex items-center justify-center
-                     rounded-full text-neutral-500 active:bg-neutral-100"
+                     rounded-full text-muted active:bg-black/5"
         >
           <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden="true">
             <path d="M4 4l10 10M14 4L4 14" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
           </svg>
         </button>
 
-        <p className="text-[11px] uppercase tracking-[0.14em] text-neutral-500 mb-2">
+        <p className="text-[13px] uppercase tracking-[0.14em] text-muted mb-2">
           {brand.name}
         </p>
-        <h2 id="offer-headline" className="text-[22px] font-semibold leading-tight mb-2">
-          {POPUP_INVARIANT.headline}
+        <h2 id="offer-headline" className="text-[22px] font-semibold leading-tight mb-2 text-ink tracking-[-0.01em]">
+          {invariant.headline}
         </h2>
-        <p className="text-[14px] text-neutral-600 leading-relaxed mb-5">
-          {POPUP_INVARIANT.subcopy}
+        <p className="text-[15px] text-muted leading-relaxed mb-5">
+          {invariant.subcopy}
         </p>
 
-        <div className="space-y-2.5">
+        <div className="space-y-3">
           <button
             type="button"
             data-control="accept"
             onClick={() => resolve('accept')}
             className={BUTTON_CLASS}
           >
-            {POPUP_INVARIANT.acceptLabel}
+            {invariant.acceptLabel}
           </button>
           {/* ── THE MANIPULATION. The only condition-dependent value here. ── */}
           <button

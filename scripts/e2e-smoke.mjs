@@ -6,6 +6,10 @@
  * Then reads the row back out of the sheet and asserts the thing that actually
  * matters: the timing fields are not null.
  *
+ * change_spec_v4_final.md Part 2/3: each store now shows TWO pop-ups — one at
+ * checkout (fires on add-to-bag, as before) and one on a new order-confirmation
+ * screen that follows it automatically, with no click needed to trigger it.
+ *
  * Run: npm run e2e
  */
 import { chromium, devices } from 'playwright';
@@ -90,22 +94,37 @@ async function main() {
 
   const errors = [];
   page.on('pageerror', (e) => errors.push(String(e)));
-  page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
+  page.on('console', (m) => {
+    if (m.type() !== 'error') return;
+    // The Google Fonts request (change_spec_v4_final.md Part 7: Instrument
+    // Sans) is the one deliberate external call in an otherwise offline-safe
+    // app — and the only possible source of a bare resource-load failure
+    // (Chromium's console message for these omits the URL). font-display:swap
+    // means a blocked/unreachable network degrades to the system-ui fallback
+    // with no functional break, so this is an anticipated degradation, not an
+    // app bug — don't let it fail this check the way a genuine JS error should.
+    if (/Failed to load resource/i.test(m.text())) return;
+    errors.push(m.text());
+  });
 
   try {
     console.log('\n\x1b[1mEnd-to-end participant run\x1b[0m (real build, real Code.gs, Pixel 5)\n');
 
     console.log('1. Consent and assignment');
-    // t5ya -> recruiter 3, arm 'strong' (src/data/groupCodes.ts). Real link
-    // format post change_spec_group_codes.md; also makes the arm deterministic
-    // for this run instead of whatever a random draw produced.
-    await page.goto(`http://localhost:${APP_PORT}/?g=t5ya`, { waitUntil: 'networkidle' });
+    // p6hd -> arm 'strong' (src/data/groupCodes.ts, change_spec_v4_final.md).
+    // Makes the arm deterministic for this run instead of whatever a random
+    // draw produced. No recruiter dimension in v4 — three links, one per arm.
+    await page.goto(`http://localhost:${APP_PORT}/?g=p6hd`, { waitUntil: 'networkidle' });
     check('no progress bar on the consent screen', (await page.locator('.bg-neutral-200.h-1').count()) === 0);
     await page.getByRole('button', { name: /I agree/i }).click();
     await page.getByRole('button', { name: /Start browsing/i }).waitFor({ timeout: 10000 });
     check('assignment resolved and instructions shown', true);
 
-    // Two shopping blocks.
+    // Two shopping blocks, each with TWO pop-ups now.
+    // Block 1: p1=decline, p2=accept (tests the "you're now following" line).
+    // Block 2: p1=accept (tests the "discount applied" line), p2=close_x.
+    const plan = { 1: ['decline', 'accept'], 2: ['accept', 'close'] };
+
     for (const block of [1, 2]) {
       console.log(`\n${block + 1}. Shopping block ${block}`);
       // Block 1 is entered from the instructions screen; block 2 follows the
@@ -113,40 +132,65 @@ async function main() {
       if (block === 1) await page.getByRole('button', { name: /Start browsing/i }).click();
 
       await page.locator('main button').first().waitFor();
-      check('storefront shows product cards', (await page.locator('main button').count()) >= 8);
+      check('storefront shows product cards', (await page.locator('main button').count()) >= 6);
       check('no progress bar during shopping', (await page.locator('div.h-1.bg-neutral-200').count()) === 0);
 
       await page.locator('main button').nth(block === 1 ? 0 : 3).click();
       await page.getByRole('button', { name: /Add to bag/i }).click();
 
-      const dialog = page.locator('[role="dialog"]');
-      await dialog.waitFor({ timeout: 5000 });
-      check('pop-up fired on add-to-bag', await dialog.isVisible());
+      // ── Pop-up 1 (checkout) ────────────────────────────────────────────
+      const dialog1 = page.locator('[role="dialog"]');
+      await dialog1.waitFor({ timeout: 5000 });
+      check(`block ${block} pop-up 1 fired on add-to-bag`, await dialog1.isVisible());
       check(
-        'pop-up headline is the invariant copy',
-        (await dialog.locator('#offer-headline').innerText()).includes('15% off'),
+        'pop-up 1 headline is the invariant copy',
+        (await dialog1.locator('#offer-headline').innerText()).includes('15% off this order'),
       );
-
-      const accept = dialog.locator('[data-control="accept"]');
-      const decline = dialog.locator('[data-control="decline"]');
-      const [ab, db] = [await accept.boundingBox(), await decline.boundingBox()];
+      const accept1 = dialog1.locator('[data-control="accept"]');
+      const decline1 = dialog1.locator('[data-control="decline"]');
+      const [ab, db] = [await accept1.boundingBox(), await decline1.boundingBox()];
       check('accept and decline have identical tap targets',
         ab.width === db.width && ab.height === db.height,
         `accept ${ab.width}x${ab.height} vs decline ${db.width}x${db.height}`);
       check('tap targets are at least 44px tall', ab.height >= 44, `${ab.height}px`);
 
-      // A deliberate pause, so latency is a real measured interval.
-      await page.waitForTimeout(900);
-      if (block === 1) await decline.click();
-      else await dialog.locator('[data-control="close"]').click();
+      const [p1Action] = plan[block];
+      await page.waitForTimeout(700);
+      await dialog1.locator(`[data-control="${p1Action === 'decline' ? 'decline' : 'accept'}"]`).click();
 
+      // ── Order-confirmation screen + pop-up 2 (automatic, no click) ──────
+      const dialog2 = page.locator('[role="dialog"]');
+      await dialog2.waitFor({ timeout: 5000 });
+      check(`block ${block} pop-up 2 fired automatically on order confirmation`, await dialog2.isVisible());
+      check(
+        'pop-up 2 headline is the invariant copy (different from pop-up 1)',
+        (await dialog2.locator('#offer-headline').innerText()).includes('15% off your next order'),
+      );
+      const bodyDuringPopup2 = await page.locator('body').innerText();
+      check('order-confirmation screen is the surface underneath pop-up 2', /Order confirmed/i.test(bodyDuringPopup2));
+      if (p1Action === 'accept') {
+        check('accepting pop-up 1 shows the discount-applied confirmation, not an email field',
+          /applied to this order/i.test(bodyDuringPopup2) && (await page.locator('input').count()) === 0);
+      }
+
+      const [, p2Action] = plan[block];
+      const control2 = p2Action === 'close' ? 'close' : p2Action === 'accept' ? 'accept' : 'decline';
+      await page.waitForTimeout(600);
+      await dialog2.locator(`[data-control="${control2}"]`).click();
+
+      // ── Continuation screen ──────────────────────────────────────────────
       await page.getByRole('button', { name: /^Continue$/ }).waitFor();
+      if (p2Action === 'accept') {
+        const contBody = await page.locator('body').innerText();
+        check('accepting pop-up 2 shows the follow-confirmation, not a social-handle field',
+          /now following/i.test(contBody) && (await page.locator('input').count()) === 0);
+      }
       await page.waitForTimeout(600);
       await page.getByRole('button', { name: /^Continue$/ }).click();
 
       console.log(`   questionnaire block ${block}`);
-      // v2: one screen per block — 4 rated items + 1 downstream choice (5
-      // radiogroups total) + an optional textarea, one Continue.
+      // v2: one screen per BRAND (not per pop-up) — 4 rated items + 1
+      // downstream choice (5 radiogroups total) + an optional textarea.
       await page.locator('[role="radiogroup"]').first().waitFor();
       check(`block ${block} has 5 radiogroups (4 rated + downstream choice)`,
         (await page.locator('[role="radiogroup"]').count()) === 5);
@@ -200,6 +244,8 @@ async function main() {
     check('debrief discloses the deception', /fictitious|do not exist/i.test(debrief));
     check('debrief names the decline-wording manipulation', /decline button/i.test(debrief));
     check('debrief cites the CCPA dark-patterns guidelines', /Dark Patterns, 2023/i.test(debrief));
+    check('debrief states no email or social account was collected',
+      /no email address or social media account was ever collected/i.test(debrief));
 
     console.log('\n6. The row that landed');
     const csv = await (await fetch(`http://localhost:${GS_PORT}/?action=export&key=${KEY}`)).text();
@@ -230,27 +276,40 @@ async function main() {
 
     check('exactly one row (checkpoints upserted, not duplicated)', lines.length - 1 === 1, `${lines.length - 1} rows`);
     check('status is complete', get('status') === 'complete');
-    check('no slot column in the header (removed with the assign endpoint)', header.indexOf('slot') === -1);
-    check("recruiter_id decoded from ?g=t5ya (recruiter 3)", get('recruiter_id') === '3');
+    check('no slot column in the header', header.indexOf('slot') === -1);
+    check('no recruiter_id column in the header (v4 drops the recruiter dimension)', header.indexOf('recruiter_id') === -1);
     check("assignment_source is 'group_code'", get('assignment_source') === 'group_code');
     check("arm is 'strong', deterministically from the code (not random)", get('arm') === 'strong');
 
     for (const p of ['neutral', 'exp']) {
-      const latency = Number(get(`${p}_latency_ms`));
-      check(`${p}_latency_ms is non-null and plausible`,
-        Number.isFinite(latency) && latency > 500 && latency < 60000, `got "${get(`${p}_latency_ms`)}"`);
-      const touch = Number(get(`${p}_time_to_first_touch_ms`));
-      check(`${p}_time_to_first_touch_ms is non-null`, Number.isFinite(touch), `got "${get(`${p}_time_to_first_touch_ms`)}"`);
-      const gap = Number(get(`${p}_popup_render_gap_ms`));
-      check(`${p}_popup_render_gap_ms is non-null and under the 2s exclusion`,
-        Number.isFinite(gap) && gap < 2000, `got "${get(`${p}_popup_render_gap_ms`)}"`);
-      check(`${p}_post_dismiss_dwell_ms is non-null`, Number.isFinite(Number(get(`${p}_post_dismiss_dwell_ms`))));
-      check(`${p}_choice recorded`, get(`${p}_choice`).length > 0, `got "${get(`${p}_choice`)}"`);
+      for (const pop of ['p1', 'p2']) {
+        const col = `${p}_${pop}`;
+        const latency = Number(get(`${col}_latency_ms`));
+        check(`${col}_latency_ms is non-null and plausible`,
+          Number.isFinite(latency) && latency > 300 && latency < 60000, `got "${get(`${col}_latency_ms`)}"`);
+        const touch = Number(get(`${col}_time_to_first_touch_ms`));
+        check(`${col}_time_to_first_touch_ms is non-null`, Number.isFinite(touch), `got "${get(`${col}_time_to_first_touch_ms`)}"`);
+        const gap = Number(get(`${col}_popup_render_gap_ms`));
+        check(`${col}_popup_render_gap_ms is non-null and under the 2s exclusion`,
+          Number.isFinite(gap) && gap < 2000, `got "${get(`${col}_popup_render_gap_ms`)}"`);
+        check(`${col}_choice recorded`, get(`${col}_choice`).length > 0, `got "${get(`${col}_choice`)}"`);
+        check(`${col}_abandoned is FALSE on a complete row`, get(`${col}_abandoned`) === 'FALSE');
+      }
       check(`${p}_decline_label recorded verbatim`, get(`${p}_decline_label`).length > 0);
     }
 
-    check('block 1 was resolved by the decline button', get(`${get('order') === 'neutral_first' ? 'neutral' : 'exp'}_choice`) === 'decline_button');
-    check('block 2 was resolved by the close X', get(`${get('order') === 'neutral_first' ? 'exp' : 'neutral'}_choice`) === 'close_x');
+    // order === 'neutral_first' means block 1 (visited first) is 'neutral';
+    // otherwise block 1 is 'exp'. Plan: block 1 = [decline, accept] -> 1 accept;
+    // block 2 = [accept, close] -> 1 accept.
+    const block1Prefix = get('order') === 'neutral_first' ? 'neutral' : 'exp';
+    const block2Prefix = block1Prefix === 'neutral' ? 'exp' : 'neutral';
+    check(`${block1Prefix}_p1 was resolved by the decline button`, get(`${block1Prefix}_p1_choice`) === 'decline_button');
+    check(`${block1Prefix}_p2 was resolved by accept`, get(`${block1Prefix}_p2_choice`) === 'accept');
+    check(`${block2Prefix}_p1 was resolved by accept`, get(`${block2Prefix}_p1_choice`) === 'accept');
+    check(`${block2Prefix}_p2 was resolved by the close X`, get(`${block2Prefix}_p2_choice`) === 'close_x');
+    check(`${block1Prefix}_accepts is 1 (one of its two pop-ups accepted)`, get(`${block1Prefix}_accepts`) === '1');
+    check(`${block2Prefix}_accepts is 1 (one of its two pop-ups accepted)`, get(`${block2Prefix}_accepts`) === '1');
+    check('diff_accepts is 0 (both blocks had exactly one accept)', get('diff_accepts') === '0');
 
     const blanks = header.filter((h) => /_(b1_guilt|b2_irritation|b3_manipulation|b4_trust|b5_raw)$/.test(h) && !get(h));
     check('every rated item and downstream choice has an answer', blanks.length === 0, `blank: ${blanks.slice(0, 5).join(', ')}`);

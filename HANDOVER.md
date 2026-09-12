@@ -7,35 +7,48 @@ pop-up appears, and the only thing that changes between participants is the word
 decline button. It logs how they respond, questions them, and debriefs them. This document is
 what exists, why it's built the way it is, and what's still open.
 
-**Two things have changed since this app was first built**, each with its own spec doc, and each a
+**Three changes have landed since this app was first built**, each with its own spec doc, each a
 patch rather than a rebuild:
 
 - [`Instrument_v2.md`](Instrument_v2.md) replaces the original 36-items-per-block battery with five
-  single-item measures per pop-up, traded for completion on phones. Supersedes PRD §4-5.
-- [`change_spec_group_codes.md`](change_spec_group_codes.md) replaces the app's own server-generated
-  assignment sequence with an opaque code in each recruiting link: the link now determines the
-  arm *and* the recruiter in one step. Supersedes PRD §7's assign endpoint.
+  single-item measures per brand, traded for completion on phones. Supersedes PRD §4-5.
+- [`change_spec_group_codes.md`](change_spec_group_codes.md) (v3) replaced the app's own
+  server-generated assignment sequence with an opaque code in each recruiting link, carrying an
+  arm and a recruiter. Supersedes PRD §7's assign endpoint.
+- [`change_spec_v4_final.md`](change_spec_v4_final.md) (v4, current) simplifies the link to **arm
+  only** (three links, no recruiter), gives each brand **two pop-ups** instead of one — the
+  original single, no-cost 15%-off pop-up put acceptance at ceiling, leaving no room for the
+  manipulation to show a behavioural difference — and redesigns the storefront to read as a real
+  quiet-premium D2C store rather than a prototype.
 
-Everything else — storefront, pop-up, event logging, debrief — is unaffected by either. If you're
-reading `PRD_confirmshaming_experiment_app.md` too, treat those sections as historical.
+If you're reading `PRD_confirmshaming_experiment_app.md` too, treat those sections as historical.
 
 | | |
 | --- | --- |
 | Target N | 45 (15 / 15 / 15 per arm) — see the counterbalancing section for a wrinkle |
-| CSV columns | 99 (one row per person) |
+| CSV columns | 129 (one row per person; two pop-ups × two blocks now carry their own behavioural columns) |
 | Rated items | 8 (4 × two blocks), plus a downstream choice, awareness and a comparative block |
-| Checks green | 92 (53 unit · 29 API round-trip · 56 end-to-end) |
-| Bundle | 69 kB gzipped, no CDN calls |
+| Pop-ups per session | 4 (2 per brand: checkout + order confirmation) |
+| App version | `4.0.0` |
+| Bundle | ~70 kB gzipped, plus one external request (Google Fonts) |
 
 ---
 
 ## Start here: what we're actually measuring
 
-Every participant sees **two** storefronts, each with an identical discount pop-up. One pop-up
-always says a plain *"No thanks."* The other says one of three loaded variants, assigned
+Every participant sees **two** storefronts, each showing **two** discount pop-ups (checkout, then
+order confirmation) with identical decline wording within that store. One store's pop-ups always
+say a plain *"No thanks."* The other's say one of three loaded variants, assigned
 between-subjects. Because each person supplies their own baseline, the primary outcome is a
 **within-person difference score** — experimental minus neutral — which strips out every stable
 individual difference. That's worth a lot at a sample this size.
+
+The original design had one pop-up per store offering 15% off at no cost — nearly everyone
+accepted regardless of condition, so the dependent variable sat at ceiling with no room for the
+manipulation to move it. `change_spec_v4_final.md` Part 2 added a second pop-up to each store,
+both attaching a real cost to accepting (an email for the checkout one, a follow for the
+order-confirmation one) — though neither actually collects anything; accepting just shows a
+confirmation message, never a text input.
 
 These four strings are the entire manipulation:
 
@@ -69,7 +82,9 @@ survey.
 | Awareness check (screen 10) | ✅ done | Asked once per brand, after both blocks, never quotes a literal decline wording |
 | Comparative block (screen 11) | ✅ done | Raw + recoded relative to the experimental brand |
 | Admin view + CSV export | ✅ done | `?admin=1&key=…`, live cell counts |
-| Group-code assignment | ✅ done | Arm + recruiter decoded from `?g=` at consent; see `change_spec_group_codes.md` |
+| Group-code assignment | ✅ done | Arm decoded from `?g=` at consent (v4: 3 codes, no recruiter); see `change_spec_v4_final.md` |
+| Two pop-ups per brand | ✅ done | Checkout + order-confirmation pop-ups, `p1`/`p2` in the schema; see `change_spec_v4_final.md` |
+| Storefront visual redesign | ✅ done | Design tokens, Instrument Sans, 6-product grid; see "Where the bodies are buried" for the one flagged deviation |
 | Codebook + R analysis starter | ✅ done | Both generated from the item bank / awareness / comparative modules |
 | **Apps Script deployed to Google** | 🟠 open | **The one unverified link.** See "What's actually open." |
 | Real-phone QA on mobile data | 🟠 open | Tested in a Pixel 5 emulation only |
@@ -90,7 +105,7 @@ npm install
 ```
 
 **2. Prove the data layer before anything else.** This loads the real generated Apps Script into
-a sandbox and asserts 29 things end to end — including that the exported CSV header is
+a sandbox and asserts things end to end — including that the exported CSV header is
 byte-identical to what the app serialises.
 ```bash
 npm run roundtrip
@@ -98,15 +113,17 @@ npm run roundtrip
 
 **3. Run the app.** It works with no backend configured — arm comes from `?g=<code>` if present,
 otherwise a genuine per-participant random draw, and submission fails gracefully into the rescue
-screen.
+screen. Building it requires `VITE_ENDPOINT_URL` to be set (even to a local mock) or the app
+reports "endpoint not configured" and every submission fails — see README's Deploy section.
 ```bash
 npm run dev        # http://localhost:5173
-npm test           # 53 unit tests
-npm run e2e        # full participant in a real browser
+npm test           # unit tests
+npm run e2e        # full participant in a real browser (builds first)
 ```
 
-**4. Skip to a condition instead of clicking through.** The overlay shows the assignment,
-recruiter, current step, and the last 14 timestamped events.
+**4. Skip to a condition instead of clicking through.** The overlay shows the assignment, current
+step, and the last 14 timestamped events, plus both blocks' pop-up 1 / pop-up 2 choices and
+latencies.
 ```
 ?debug=1&arm=strong&order=exp_first
 ```
@@ -117,9 +134,9 @@ recruiter, current step, and the last 14 timestamped events.
 Rscript analysis_starter.R analysis/synthetic_sample.csv
 ```
 
-Full deployment walkthrough — Google Sheet, Apps Script, Vercel, recruiter links — is in
-`README.md`, including the full list of twelve `?g=` links and their code-to-arm mapping. Every
-column, scale and recoding rule is in `codebook.md`.
+Full deployment walkthrough — Google Sheet, Apps Script, Vercel, recruiting links — is in
+`README.md`, including the three `?g=` links and their code-to-arm mapping. Every column, scale
+and recoding rule is in `codebook.md`.
 
 ---
 
@@ -141,11 +158,18 @@ structurally impossible, not merely unlikely.
 
 ### 2. The condition is one string, and nothing else can become one
 
-`Popup.tsx` reads its headline, subcopy and accept label from `POPUP_INVARIANT` constants rather
-than receiving them as props — so a per-condition override isn't expressible in the component's
-interface. Both buttons share a single class string, so tap target and contrast cannot diverge.
-They're both plain outlined buttons: a filled "accept" against an outlined "decline" is itself a
-dark pattern and would confound prominence with wording.
+`Popup.tsx` reads its headline, subcopy and accept label from `POPUP1_INVARIANT` /
+`POPUP2_INVARIANT` constants (one pair per pop-up, since v4 gave each brand two) rather than
+receiving them as props — so a per-arm override isn't expressible in the component's interface.
+Both buttons share a single class string, so tap target and contrast cannot diverge. They're both
+plain outlined buttons: a filled "accept" against an outlined "decline" is itself a dark pattern
+and would confound prominence with wording.
+
+> **Flagged, not silently resolved.** `change_spec_v4_final.md` Part 7's redesign literally asks
+> for a filled accept button against an outlined decline — which is exactly the pattern its own
+> Part 6 (and this section) says is a second dark pattern. Both buttons were kept visually
+> identical; only sizing/spacing/tokens were updated for the redesign. See the comment at the top
+> of `Popup.tsx` for the full reasoning.
 
 > `src/data/conditions.ts` · `src/screens/Popup.tsx`
 
@@ -191,13 +215,14 @@ asserts the recoded meaning stays fixed to condition while its relationship to p
 
 ### 7. The link decides the arm, the app never guesses one
 
-Arm and recruiter are decoded from an opaque `?g=` code at the consent screen — `GROUP_CODES` in
+Arm is decoded from an opaque `?g=` code at the consent screen — `GROUP_CODES` in
 `src/data/groupCodes.ts` is the only place that mapping lives (besides README.md, which stays
-out of participants' hands). A missing or mistyped code doesn't fall through to any fixed arm —
-it draws a genuine random one client-side and records `assignment_source='random'` with an empty
-recruiter, so a bad link degrades gracefully instead of silently biasing the sample toward one
-condition. The raw code itself is never shown in the UI or written to the Sheet — only the
-decoded arm and `recruiter_id` are logged.
+out of participants' hands). v4 trimmed this to three codes, one per arm — v3's recruiter
+dimension (four recruiters × three arms, twelve codes, a `recruiter_id` column) is gone entirely.
+A missing or mistyped code doesn't fall through to any fixed arm — it draws a genuine random one
+client-side and records `assignment_source='random'`, so a bad link degrades gracefully instead
+of silently biasing the sample toward one condition. The raw code itself is never shown in the UI
+or written to the Sheet — only the decoded arm is logged.
 
 > `src/data/groupCodes.ts` · `src/machine/SessionContext.tsx` (`resolveAssignment`)
 
@@ -218,9 +243,12 @@ three things `Instrument_v2.md` itself calls out as "easy to get wrong."
 | Awareness asked once per brand, only after both blocks; never quotes a literal decline wording | `machine/steps.test.ts` |
 | Brand-trust item is level-framed, not change-framed | `machine/steps.test.ts` |
 | Comparative recoding is relative to condition, not presentation position | `data/comparative.test.ts` |
-| A valid group code decodes to its exact arm + recruiter | `data/groupCodes.test.ts` |
+| Each of the three group codes decodes to its exact arm | `data/groupCodes.test.ts` |
 | A missing/unrecognised code never falls back to a fixed arm | `data/groupCodes.test.ts` |
 | Group codes are matched case-insensitively, whitespace trimmed | `data/groupCodes.test.ts` |
+| Both of a block's pop-ups are identical across arms once decline wording is neutralised | `Popup.identical.test.tsx` |
+| Both of a block's pop-ups show the SAME decline wording (never mixed) | `Popup.identical.test.tsx` |
+| checkout→confirm→continuation→block runs in order for both blocks | `machine/steps.test.ts` |
 
 **If one of these fails, do not update it to pass.** It's telling you the manipulation has been
 confounded, and there is no statistical fix for that after collection. The identical-pop-up test
@@ -233,30 +261,31 @@ that's what will catch you.
 
 ---
 
-## The counterbalancing, and why 15 doesn't divide by 4 either
+## The counterbalancing, and how assignment actually works now
 
-> **Superseded mechanism, kept for history.** Until `change_spec_group_codes.md`, arm came from a
-> pre-generated, seeded sequence served one slot at a time by the Apps Script under a script
-> lock — that's why the target was 13/13/14 rather than 15/15/15, and why the repo still has a
-> vestigial `sequence.ts` and `?action=assign` endpoint. Neither is live any more; the paragraphs
-> below describe the mechanism that actually runs today.
+> **Superseded mechanism, kept for history.** Until `change_spec_group_codes.md` (v3), arm came
+> from a pre-generated, seeded sequence served one slot at a time by the Apps Script under a
+> script lock — that's why `ARM_TARGETS` still reads 13/13/14 rather than 15/15/15, and why the
+> repo still has a vestigial `sequence.ts` and `?action=assign` endpoint. v3 then added a
+> recruiter dimension (twelve codes, `recruiter_id`) that v4 (`change_spec_v4_final.md`) removed
+> again. None of that machinery is live any more; the paragraphs below describe the mechanism that
+> actually runs today.
 
 Arm is decoded from the recruiting link's group code (`?g=<code>`, `src/data/groupCodes.ts`), not
-assigned by the app. Twelve codes exist — one per recruiter × arm — so each of the four
-recruiters hands out links for all three arms rather than flooding one arm with their own social
-circle. Order (neutral-first vs experimental-first) and brand pairing are **not** counterbalanced
-by a sequence any more: each is drawn with a plain `Math.random()` per participant, because
-exact per-cell balance on these nuisance factors was judged not worth reintroducing server-side
-state for. A participant who consents and then drops doesn't burn a reserved slot — there's
-nothing to reserve — so no insurance-slot bookkeeping is needed either.
+assigned by the app. **Three codes exist as of v4 — one per arm, no recruiter dimension** (v3 had
+twelve: four recruiters × three arms, plus a `recruiter_id` column — `change_spec_v4_final.md`
+Part 1 dropped that entirely). Order (neutral-first vs experimental-first) and brand pairing are
+**not** counterbalanced by a sequence any more: each is drawn with a plain `Math.random()` per
+participant, because exact per-cell balance on these nuisance factors was judged not worth
+reintroducing server-side state for. A participant who consents and then drops doesn't burn a
+reserved slot — there's nothing to reserve — so no insurance-slot bookkeeping is needed either.
 
-The target N is 45 (15/15/15 per arm), one recruiter short of dividing evenly: with 4 recruiters
-per arm, one recruiter per arm has to hand out one fewer link than the other three (e.g. 4/4/4/3).
-`ARM_TARGETS` in `src/data/conditions.ts` was **not** updated for this change — it still reads
-13/13/14, the old design's target — since the spec never asked for that constant to move.
-Treat the admin view's per-arm progress bars as stale until someone updates it; the true target is
-15/15/15, and `analysis_starter.R`'s arm × recruiter table is the place to actually check the
-mix as data comes in.
+The target N is 45 (15/15/15 per arm) — with only one link per arm now, there's no recruiter-split
+arithmetic wrinkle left; just send that arm's link until it's full. `ARM_TARGETS` in
+`src/data/conditions.ts` was **not** updated for this change — it still reads 13/13/14, the old
+design's target — since neither change spec ever asked for that constant to move. Treat the admin
+view's per-arm progress bars as stale until someone updates it; the true target is 15/15/15, and
+`analysis_starter.R`'s cell-count table is the place to actually check the mix as data comes in.
 
 ---
 
@@ -276,7 +305,8 @@ quietly revert them.
 | Continuation "6s or until action" | Live at 0s, auto-advance at 8s, censoring flagged | Ambiguous between a floor and a ceiling, which give different dwell distributions |
 | `abandon` code, no threshold | `timeout` at 45s | Without a timeout a frozen participant loses the entire row |
 | ~6 minutes (v1: stated 8–10 due to item load) | Consent states ~6 minutes again | v2's much shorter instrument (~23 items vs ~80) makes the original estimate realistic |
-| Arm assigned by the app (pre-generated sequence via `?action=assign`) | Arm decoded from the link's `?g=` group code; order/pairing drawn per participant | `change_spec_group_codes.md`: a clean 15/15/15 split needs each arm drawing from all four recruiters' social circles, which only link-based control achieves |
+| Arm assigned by the app (pre-generated sequence via `?action=assign`) | Arm decoded from the link's `?g=` group code (one code per arm as of v4); order/pairing drawn per participant | `change_spec_group_codes.md` / `change_spec_v4_final.md`: link-based control gets a clean split without server-side state |
+| One pop-up per brand | Two pop-ups per brand (checkout + order confirmation), same decline wording within a brand | `change_spec_v4_final.md` Part 2: the original no-cost 15%-off pop-up put acceptance at ceiling, leaving no room for the manipulation to show a behavioural difference |
 
 ---
 
@@ -328,7 +358,7 @@ Good places to pick up, roughly in the order they block progress.
 > against a faithful local sandbox running the real `Code.gs`, but *not* against Google's actual
 > servers. The `text/plain` CORS-simple POST is a well-established Apps Script pattern, but it
 > hasn't been confirmed on a live deployment. Follow the README, then open
-> `<EXEC_URL>?action=ping` — it should return `{"ok":true,"columns":99,"slots":52}` (`slots` is
+> `<EXEC_URL>?action=ping` — it should return `{"ok":true,"columns":129,"slots":52}` (`slots` is
 > vestigial — see "The counterbalancing" above). If it doesn't, `?action=verify&pid=` is already
 > wired as a fallback path.
 
@@ -350,9 +380,26 @@ Good places to pick up, roughly in the order they block progress.
   spec never asked for it to move — but it means the admin view's progress bars target the old
   N=40 design. Cosmetic only; doesn't affect assignment. Fix it if the admin view starts being
   used to judge whether recruiting is on track.
-- **No live count of `random`-fallback or arm × recruiter mix in the admin view.** Adding one
-  would mean changing `Code.gs`'s stats endpoint, which the group-code spec explicitly says is
-  out of scope. Until then, use Download CSV + `analysis_starter.R`, which already reports both.
+- **No live count of `random`-fallback assignments in the admin view.** Adding one would mean
+  changing `Code.gs`'s stats endpoint, which the group-code spec explicitly says is out of scope.
+  Until then, use Download CSV + `analysis_starter.R`, which already reports it.
+- **Pop-up button styling deliberately ignores one line of `change_spec_v4_final.md` Part 7.**
+  The redesign spec asks for a filled accept button against an outlined decline; that's exactly
+  the pattern Part 6 (and this app's whole design) calls a second dark pattern that confounds
+  wording with prominence. Both buttons were kept visually identical instead — see idea #2 above
+  and the comment in `Popup.tsx`. Flagged for the study team to confirm, not silently overridden.
+- **Real product photography was not sourced.** Part 7 asks for "real product images... committed
+  locally rather than hotlinking." This session had no reliable way to source and license actual
+  photography inside a sandboxed environment, so the existing inline-SVG product illustrations
+  (`src/components/ProductArt.tsx`) were kept and restyled to the new tokens instead. Swap in real
+  photos before this goes out to real participants if photorealism matters to the write-up —
+  the illustrations are honest placeholders, not a finished asset.
+- **Instrument Sans (Google Fonts) is one deliberate external network call** in an app that
+  otherwise makes none. `font-display: swap` means a blocked or slow request degrades to the
+  system-ui fallback with no functional break (confirmed: it failed outright in this session's
+  sandbox and the app kept working, just in the fallback font) — but it's a real, if small,
+  tension with the "nothing breaks mid-study on a bad connection" principle the rest of the app
+  follows. Worth knowing about before a pilot on a flaky connection.
 
 ---
 
@@ -363,31 +410,31 @@ Good places to pick up, roughly in the order they block progress.
 ```
 PRD_confirmshaming_experiment_app.md   the original spec
 Instrument_v2.md                       replaces PRD §4-5 — the shortened questionnaire
-README.md                              deployment, debug mode, recruiter links, checklist
+README.md                              deployment, debug mode, the three arm links, checklist
 codebook.md                            GENERATED — every column, scale, recoding rule, deviation
 analysis_starter.R                     recoding verification, difference scores, effect sizes
 apps-script/Code.gs                    GENERATED — paste this into the Apps Script editor
 
 src/data/
-  items.ts                             ← THE RATED ITEMS + downstream choice. Start here.
+  items.ts                             ← THE RATED ITEMS + downstream choice, per brand. Start here.
   awareness.ts                         the awareness check (screen 10)
   comparative.ts                       the comparative block + brand-relative recoding (screen 11)
-  groupCodes.ts                        the ?g= code → {recruiter, arm} table. Never ship this to participants.
-  columns.ts                           the 99-column CSV contract
-  conditions.ts                        the four wordings, and nothing else per-condition
+  groupCodes.ts                        the ?g= code → arm table (3 codes, v4). Never ship this to participants.
+  columns.ts                           the 129-column CSV contract (p1/p2 per pop-up)
+  conditions.ts                        the four wordings + both pop-ups' invariant copy
   sequence.ts                          GENERATED, VESTIGIAL — the old 52-slot assignment sequence, unused
   brands.ts copy.ts config.ts
 
 src/machine/                           steps, reducer, persistence, session provider
-src/instrumentation/                   clock.ts (the only timer) · popupTelemetry.ts
+src/instrumentation/                   clock.ts (the only timer) · popupTelemetry.ts (per pop-up)
 src/net/                               api.ts transport · serialize.ts row builder (recoding happens here)
-src/screens/                           one component per step
+src/screens/                           one component per step, incl. the new OrderConfirmation
 
 scripts/
   gen-*.ts                             the generators behind npm run gen
   mock-apps-script.mjs                 runs the real Code.gs locally under stubs
-  roundtrip-test.ts                    29 assertions on the data layer
-  e2e-smoke.mjs                        56 assertions, real browser, real row
+  roundtrip-test.ts                    assertions on the data layer
+  e2e-smoke.mjs                        real browser, real row, four pop-ups exercised
   make-synthetic-csv.ts                the dry-run dataset
 
 analysis/
@@ -397,6 +444,5 @@ analysis/
 
 ---
 
-Six commits on `claude/brave-heisenberg-m8zf3f`. Roughly 6,700 lines of TypeScript across the
-app, generators and test harnesses. Read `README.md` for deployment and `codebook.md` before
-touching the instrument.
+Seven commits on `claude/brave-heisenberg-m8zf3f`. Read `README.md` for deployment and
+`codebook.md` before touching the instrument.

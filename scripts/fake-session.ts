@@ -7,9 +7,11 @@ import { DECLINE_COPY, type Arm, type BlockOrder, type BrandPairing } from '../s
 import {
   blockAtPosition,
   brandForBlock,
+  emptyPopupResult,
   type AssignmentSource,
   type BlockData,
   type BlockKey,
+  type PopupResult,
   type Session,
 } from '../src/machine/types';
 
@@ -18,6 +20,24 @@ function rnd(min: number, max: number): number {
   // Deterministic pseudo-random so repeated runs are comparable.
   counter = (counter * 1103515245 + 12345) & 0x7fffffff;
   return min + (counter / 0x7fffffff) * (max - min);
+}
+
+function fakePopup(complete: boolean, accept: boolean): PopupResult {
+  if (!complete) return emptyPopupResult();
+  return {
+    choice: accept ? 'accept' : 'decline_button',
+    latencyMs: Math.round(rnd(900, 6000)),
+    timeToFirstTouchMs: Math.round(rnd(400, 2500)),
+    cancelledTaps: Math.round(rnd(0, 3)),
+    pointerCancels: Math.round(rnd(0, 6)),
+    pressDwellMs: Math.round(rnd(60, 400)),
+    postDismissDwellMs: Math.round(rnd(200, 8000)),
+    continuationAutoAdvanced: false,
+    scrollEvents: Math.round(rnd(2, 20)),
+    rageTaps: Math.round(rnd(0, 2)),
+    popupRenderGapMs: Math.round(rnd(40, 400)),
+    timingInvalidated: false,
+  };
 }
 
 function fakeBlock(
@@ -41,20 +61,10 @@ function fakeBlock(
     brandId: brandForBlock(pairing, key),
     position,
     declineLabel: DECLINE_COPY[condition],
-    choice: complete ? (key === 'neutral' ? 'decline_button' : 'close_x') : null,
-    latencyMs: complete ? Math.round(rnd(900, 6000)) : null,
-    timeToFirstTouchMs: complete ? Math.round(rnd(400, 2500)) : null,
-    cancelledTaps: complete ? Math.round(rnd(0, 3)) : 0,
-    pointerCancels: complete ? Math.round(rnd(0, 6)) : 0,
-    pressDwellMs: complete ? Math.round(rnd(60, 400)) : 0,
-    postDismissDwellMs: complete ? Math.round(rnd(1200, 8000)) : null,
-    continuationAutoAdvanced: complete ? false : null,
-    scrollEvents: complete ? Math.round(rnd(2, 20)) : 0,
-    rageTaps: complete ? Math.round(rnd(0, 2)) : 0,
-    popupRenderGapMs: complete ? Math.round(rnd(80, 400)) : null,
     productViewed: complete ? 'bottle_tall' : null,
     timeOnStoreMs: complete ? Math.round(rnd(8000, 45000)) : null,
-    timingInvalidated: false,
+    p1: fakePopup(complete, false),
+    p2: fakePopup(complete, key === 'exp'),
     ratings,
     downstreamChoice: complete ? 'compare' : null,
     openEnded: complete ? 'It felt a bit much, to be honest.' : '',
@@ -68,18 +78,16 @@ export function fakeSession(opts: {
   pairing: BrandPairing;
   complete: boolean;
   isDebug?: boolean;
-  /** Defaults to 'group_code' with recruiterId '2', matching a real link. */
+  /** Defaults to 'group_code', matching a real link. */
   assignmentSource?: AssignmentSource;
-  recruiterId?: string;
 }): Session {
   const { participantId, arm, order, pairing, complete } = opts;
   const source = opts.assignmentSource ?? 'group_code';
   const now = new Date().toISOString();
   return {
-    schema: 3,
+    schema: 4,
     step: complete ? 'debrief' : 'block_1',
     participantId,
-    recruiterId: opts.recruiterId ?? (source === 'group_code' ? '2' : ''),
     isDebug: opts.isDebug ?? false,
     assignment: { source, arm, order, pairing },
     blocks: {
@@ -123,8 +131,8 @@ export function fakeSession(opts: {
         },
     eventLog: [
       { t: 0, type: 'consent_accepted' },
-      { t: 1234.5, type: 'popup_rendered', block: 'neutral', payload: { gap_ms: 142 } },
-      { t: 3891.25, type: 'popup_choice', block: 'neutral', payload: { choice: 'decline_button' } },
+      { t: 1234.5, type: 'popup_rendered', block: 'neutral', popup: 'p1', payload: { gap_ms: 142 } },
+      { t: 3891.25, type: 'popup_resolved', block: 'neutral', popup: 'p1', payload: { choice: 'decline_button' } },
     ],
     meta: {
       startedAtIso: now,

@@ -15,47 +15,38 @@ import { serializeSession } from '../net/serialize';
 import { lookupGroupCode, randomArm, randomOrderAndPairing } from '../data/groupCodes';
 import type { RatedItemId, DownstreamChoice } from '../data/items';
 import type { Choice } from '../data/conditions';
-import type { Assignment, BlockData, BlockKey, EndMatter, Session, Step } from './types';
+import type { Assignment, BlockKey, EndMatter, PopupKey, PopupResult, Session, Step } from './types';
 
-/** Bumped for the group-code assignment change (change_spec_group_codes.md). */
-const APP_VERSION = '3.0.0';
+/** Bumped for the v4 change (change_spec_v4_final.md): two pop-ups per brand, three group codes, no recruiter. */
+const APP_VERSION = '4.0.0';
 
 /**
- * Resolves arm, order, pairing and recruiter for a new session. Pure aside
- * from Math.random — no I/O, no network, so this runs synchronously the
- * moment consent is accepted. Debug overrides (?debug=1&arm=...) take
- * priority over a group code, exactly as before; a group code takes priority
- * over the random fallback; a missing or unrecognised code NEVER falls back
- * to a fixed arm (change_spec_group_codes.md §1) — it draws uniformly at
- * random, same as order and pairing always do.
+ * Resolves arm, order and pairing for a new session. Pure aside from
+ * Math.random — no I/O, no network, so this runs synchronously the moment
+ * consent is accepted. Debug overrides (?debug=1&arm=...) take priority over
+ * a group code, exactly as before; a group code takes priority over the
+ * random fallback; a missing or unrecognised code NEVER falls back to a
+ * fixed arm — it draws uniformly at random, same as order and pairing always
+ * do. v4 drops the recruiter dimension entirely (change_spec_v4_final.md §1).
  */
-function resolveAssignment(url: UrlConfig): { assignment: Assignment; recruiterId: string } {
+function resolveAssignment(url: UrlConfig): Assignment {
   const { order, pairing } = randomOrderAndPairing();
 
   if (url.forced) {
     return {
-      assignment: {
-        source: 'debug',
-        arm: url.forced.arm ?? randomArm(),
-        order: url.forced.order ?? order,
-        pairing: url.forced.pairing ?? pairing,
-      },
-      recruiterId: '',
+      source: 'debug',
+      arm: url.forced.arm ?? randomArm(),
+      order: url.forced.order ?? order,
+      pairing: url.forced.pairing ?? pairing,
     };
   }
 
   const decoded = lookupGroupCode(url.groupCode);
   if (decoded) {
-    return {
-      assignment: { source: 'group_code', arm: decoded.arm, order, pairing },
-      recruiterId: String(decoded.recruiter),
-    };
+    return { source: 'group_code', arm: decoded, order, pairing };
   }
 
-  return {
-    assignment: { source: 'random', arm: randomArm(), order, pairing },
-    recruiterId: '',
-  };
+  return { source: 'random', arm: randomArm(), order, pairing };
 }
 
 interface SessionApi {
@@ -67,9 +58,9 @@ interface SessionApi {
   productViewed: (block: BlockKey, sku: string) => void;
   productClosed: () => void;
   addToBag: (block: BlockKey, sku: string, timeOnStoreMs: number) => void;
-  popupRendered: (block: BlockKey, renderGapMs: number) => void;
-  popupTelemetry: (block: BlockKey, patch: Partial<BlockData>) => void;
-  popupResolved: (block: BlockKey, choice: Choice, latencyMs: number | null) => void;
+  popupRendered: (block: BlockKey, popup: PopupKey, renderGapMs: number) => void;
+  popupTelemetry: (block: BlockKey, popup: PopupKey, patch: Partial<PopupResult>) => void;
+  popupResolved: (block: BlockKey, popup: PopupKey, choice: Choice, latencyMs: number | null) => void;
   continuationDone: (block: BlockKey, dwellMs: number, autoAdvanced: boolean) => void;
   rate: (block: BlockKey, itemId: RatedItemId, value: number) => void;
   setDownstreamChoice: (block: BlockKey, value: DownstreamChoice) => void;
@@ -227,14 +218,13 @@ export function SessionProvider({ children }: { children: ReactNode }): JSX.Elem
       url,
       durationS,
       acceptConsent: () => {
-        const { assignment, recruiterId } = resolveAssignment(url);
-        // Log the DECODED arm and recruiter, never the raw ?g= code — the
-        // code is the one thing that must never reach the data or the UI.
+        const assignment = resolveAssignment(url);
+        // Log the DECODED arm, never the raw ?g= code — the code is the one
+        // thing that must never reach the data or the UI.
         send({
           type: 'consent_accepted',
           assignment,
-          recruiterId,
-          event: makeEvent('consent_accepted', { ...assignment, recruiter_id: recruiterId }),
+          event: makeEvent('consent_accepted', { ...assignment }),
         });
       },
       advance: (payload) => send({ type: 'advance', event: makeEvent('advance', payload) }),
@@ -248,21 +238,21 @@ export function SessionProvider({ children }: { children: ReactNode }): JSX.Elem
           type: 'add_to_bag', block, sku, timeOnStoreMs,
           event: makeEvent('add_to_bag', { sku, time_on_store_ms: ms(timeOnStoreMs) }, block),
         }),
-      popupRendered: (block, renderGapMs) =>
+      popupRendered: (block, popup, renderGapMs) =>
         send({
-          type: 'popup_rendered', block, renderGapMs,
-          event: makeEvent('popup_rendered', { render_gap_ms: ms(renderGapMs) }, block),
+          type: 'popup_rendered', block, popup, renderGapMs,
+          event: makeEvent('popup_rendered', { render_gap_ms: ms(renderGapMs) }, block, popup),
         }),
-      popupTelemetry: (block, patch) => send({ type: 'popup_telemetry', block, patch }),
-      popupResolved: (block, choice, latencyMs) =>
+      popupTelemetry: (block, popup, patch) => send({ type: 'popup_telemetry', block, popup, patch }),
+      popupResolved: (block, popup, choice, latencyMs) =>
         send({
-          type: 'popup_resolved', block, choice, latencyMs,
-          event: makeEvent('popup_resolved', { choice, latency_ms: latencyMs === null ? null : ms(latencyMs) }, block),
+          type: 'popup_resolved', block, popup, choice, latencyMs,
+          event: makeEvent('popup_resolved', { choice, latency_ms: latencyMs === null ? null : ms(latencyMs) }, block, popup),
         }),
       continuationDone: (block, dwellMs, autoAdvanced) =>
         send({
           type: 'continuation_done', block, dwellMs, autoAdvanced,
-          event: makeEvent('continuation_done', { dwell_ms: ms(dwellMs), auto: autoAdvanced }, block),
+          event: makeEvent('continuation_done', { dwell_ms: ms(dwellMs), auto: autoAdvanced }, block, 'p2'),
         }),
       rate: (block, itemId, value) =>
         send({ type: 'rate', block, itemId, value, event: makeEvent('rate', { item: itemId, value }, block) }),

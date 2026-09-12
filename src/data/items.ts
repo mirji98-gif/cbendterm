@@ -2,10 +2,14 @@
  * THE ITEM BANK — single source of truth for the instrument (v2).
  *
  * Instrument v2 replaces the v1 multi-item, multi-factor battery with five
- * single-item measures per pop-up (`Instrument_v2.md`, which replaces PRD §4
+ * single-item measures per BRAND (`Instrument_v2.md`, which replaces PRD §4
  * and §5). This is a deliberate reliability-for-completion trade: at N = 40 on
  * phones, a participant who quits at minute seven is a bigger threat to the
  * study than a single-item measure with unknown reliability.
+ *
+ * change_spec_v4_final.md Part 4: each brand now shows TWO pop-ups, but B1–B6
+ * are still asked once per brand (not once per pop-up) — the stems below refer
+ * to "this brand's offers" rather than "this pop-up" or "this offer".
  *
  * `codebook.md`, the CSV column list (src/data/columns.ts), the Apps Script
  * sheet header, and `analysis/generated_scales.R` are all GENERATED from this
@@ -55,18 +59,20 @@ export interface RatedItem {
 export const RATED_ITEMS: readonly RatedItem[] = [
   {
     id: 'b1_guilt',
-    text: 'I felt guilty about declining the offer.',
+    text: "I felt guilty about declining this brand's offers.",
     scale: 'intensity',
     anchorLow: 'Not at all',
     anchorHigh: 'Very strongly',
     note:
       'Keeps H1 testable — without a guilt item there is no basis for calling this a guilt appeal, ' +
       'which is the entire premise of the Peng et al. prediction. Worded as guilt about DECLINING, ' +
-      'not about the brand.',
+      'not about the brand. change_spec_v4_final.md Part 4 moves the stem to brand level: with two ' +
+      "pop-ups per brand now sharing the same decline wording, \"this brand's offers\" (plural) is " +
+      'the accurate referent, not any single pop-up.',
   },
   {
     id: 'b2_irritation',
-    text: 'I felt irritated by the way this offer was presented.',
+    text: "I felt irritated by the way this brand presented its offers.",
     scale: 'intensity',
     anchorLow: 'Not at all',
     anchorHigh: 'Very strongly',
@@ -77,7 +83,7 @@ export const RATED_ITEMS: readonly RatedItem[] = [
   },
   {
     id: 'b3_manipulation',
-    text: 'The way this offer was presented was intended to pressure me into accepting it.',
+    text: "The way this brand presented its offers was intended to pressure me into accepting.",
     scale: 'agree',
     anchorLow: 'Strongly disagree',
     anchorHigh: 'Strongly agree',
@@ -114,7 +120,7 @@ export type DownstreamChoice = 'buy' | 'compare' | 'competitor' | 'avoid' | 'not
 
 export const DOWNSTREAM_CHOICE_STEM =
   'If you were actually shopping for this type of product, which would you be most likely to do ' +
-  'after seeing this pop-up?';
+  'after this experience?';
 
 export const DOWNSTREAM_CHOICE_OPTIONS: readonly { value: DownstreamChoice; label: string }[] = [
   { value: 'buy', label: 'Buy from this brand' },
@@ -140,4 +146,5 @@ export function downstreamOrdinal(raw: DownstreamChoice | null): number | null {
 // ── B6: open-ended ───────────────────────────────────────────────────────────
 
 /** Optional, skippable immediately — no minimum length, no forced wait. */
-export const BLOCK_OPEN_ENDED_STEM = 'What, if anything, stood out to you about the way the offer was presented?';
+export const BLOCK_OPEN_ENDED_STEM =
+  'What, if anything, stood out to you about the way this brand presented its offers?';

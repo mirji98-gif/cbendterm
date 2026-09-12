@@ -20,7 +20,7 @@
 import { useCallback, useRef } from 'react';
 import { now, ms } from './clock';
 import { TIMING } from '../data/config';
-import type { BlockData } from '../machine/types';
+import type { PopupResult } from '../machine/types';
 
 interface Tap {
   t: number;
@@ -36,7 +36,7 @@ export interface PopupTelemetry {
   /** Milliseconds since the pop-up was painted. Null if never marked. */
   latency: () => number | null;
   /** Accumulated telemetry, for dispatch at the moment of the committed action. */
-  snapshot: () => Partial<BlockData>;
+  snapshot: () => Partial<PopupResult>;
 }
 
 export function usePopupTelemetry(): PopupTelemetry {
@@ -149,7 +149,7 @@ export function usePopupTelemetry(): PopupTelemetry {
     [],
   );
 
-  const snapshot = useCallback((): Partial<BlockData> => {
+  const snapshot = useCallback((): Partial<PopupResult> => {
     endPress();
     return {
       timeToFirstTouchMs: firstTouchAt.current === null ? null : ms(firstTouchAt.current),

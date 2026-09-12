@@ -61,15 +61,20 @@ if (n_random > 0) {
   cat("    Report this count as a limitation; it is outside the intended 15/15/15 allocation.\n")
 }
 
-# Render-gap exclusion is applied PER BLOCK, not per participant: a slow paint
-# on one pop-up does not invalidate the other block's self-report.
+# Render-gap exclusion is applied PER POP-UP, not per block or participant
+# (change_spec_v4_final.md Part 2: two pop-ups per brand now): a slow paint on
+# one pop-up does not invalidate the other pop-up's, let alone the other
+# block's, self-report.
 for (p in BLOCK_PREFIXES) {
-  gap <- num(d[[paste0(p, "_popup_render_gap_ms")]])
-  bad <- !is.na(gap) & gap > RENDER_GAP_EXCLUSION_MS
-  if (any(bad)) {
-    cat(sprintf("  %s block latency voided (>%dms paint): %d\n",
-                p, RENDER_GAP_EXCLUSION_MS, sum(bad)))
-    d[[paste0(p, "_latency_ms")]][bad] <- NA
+  for (pop in POPUP_PREFIXES) {
+    col <- paste0(p, "_", pop)
+    gap <- num(d[[paste0(col, "_popup_render_gap_ms")]])
+    bad <- !is.na(gap) & gap > RENDER_GAP_EXCLUSION_MS
+    if (any(bad)) {
+      cat(sprintf("  %s latency voided (>%dms paint): %d\n",
+                  col, RENDER_GAP_EXCLUSION_MS, sum(bad)))
+      d[[paste0(col, "_latency_ms")]][bad] <- NA
+    }
   }
 }
 
@@ -91,30 +96,14 @@ if (any(shortfall > 0)) {
             sep = "=", collapse = ", "), "\n")
 }
 cat("\n  NOTE: ARM_TARGETS above is the value generated from src/data/conditions.ts,\n")
-cat("  which this codebase still states as 13/13/14 (N=40) — change_spec_group_codes.md's\n")
+cat("  which this codebase still states as 13/13/14 (N=40) — change_spec_v4_final.md's\n")
 cat("  own stated goal is a 15/15/15 split (N=45), but it did not ask for that constant to\n")
 cat("  be changed anywhere, so it was left as-is. Update ARM_TARGETS in conditions.ts (and\n")
 cat("  re-run npm run gen) if 15/15/15 should be the reported target.\n\n")
 
-# change_spec_group_codes.md §6: arm x recruiter balance, so a recruiter
-# effect (or a recruiter who never got their links out) is visible now,
-# not discovered after the fact. recruiter_id is blank for random-fallback
-# assignments, which is expected and reported separately above.
-cat("Arm x recruiter_id (blank = random-fallback assignment):\n")
-recruiter_factor <- factor(d$recruiter_id, levels = c("1", "2", "3", "4", ""))
-arm_x_recruiter <- table(factor(d$arm, levels = ARMS), recruiter_factor)
-print(arm_x_recruiter)
-empty_cells <- which(arm_x_recruiter[, c("1", "2", "3", "4")] == 0, arr.ind = TRUE)
-if (nrow(empty_cells) > 0) {
-  cat("\n  ⚠ Zero participants for these arm x recruiter combinations:\n")
-  for (r in seq_len(nrow(empty_cells))) {
-    cat(sprintf("    %s x recruiter %s\n",
-                rownames(arm_x_recruiter)[empty_cells[r, 1]],
-                colnames(arm_x_recruiter[, c("1", "2", "3", "4")])[empty_cells[r, 2]]))
-  }
-  cat("  That arm is not drawing from that recruiter's circle at all --\n")
-  cat("  exactly the imbalance the group-code scheme was meant to prevent.\n")
-}
+# change_spec_v4_final.md Part 1 drops the recruiter dimension entirely (three
+# links, one per arm) — there is no recruiter_id column any more to balance,
+# so the arm x recruiter table from the v3 script is gone.
 cat("\n")
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -187,19 +176,32 @@ recode_response <- function(choice, latency, aware_correct, threshold = IGNORE_L
 
 for (p in BLOCK_PREFIXES) {
   correct_col <- if (p == "neutral") "aware_neutral_correct" else "aware_exp_correct"
-  d[[paste0(p, "_code")]] <- recode_response(
-    d[[paste0(p, "_choice")]], num(d[[paste0(p, "_latency_ms")]]), is_true(d[[correct_col]])
-  )
+  for (pop in POPUP_PREFIXES) {
+    col <- paste0(p, "_", pop)
+    d[[paste0(col, "_code")]] <- recode_response(
+      d[[paste0(col, "_choice")]], num(d[[paste0(col, "_latency_ms")]]), is_true(d[[correct_col]])
+    )
+  }
 }
 
-cat("── Behavioural response by arm ─────────────────────────\n")
-cat("\nNeutral pop-up (within-person baseline, pooled across arms):\n")
-print(table(d$neutral_code))
-cat("\nExperimental pop-up, by arm:\n")
-print(table(d$arm, d$exp_code))
+cat("── Behavioural response by arm, per pop-up ─────────────\n")
+for (pop in POPUP_PREFIXES) {
+  cat(sprintf("\nNeutral %s (within-person baseline, pooled across arms):\n", pop))
+  print(table(d[[paste0("neutral_", pop, "_code")]]))
+  cat(sprintf("\nExperimental %s, by arm:\n", pop))
+  print(table(d$arm, d[[paste0("exp_", pop, "_code")]]))
+}
 
 cat("\nAwareness — correctly identified the experimental wording, by arm:\n")
 print(round(tapply(is_true(d$aware_exp_correct), d$arm, mean), 2))
+
+cat("\nAcceptance count per brand (0-2 pop-ups accepted), by arm:\n")
+cat("  Neutral pop-ups accepted, mean:\n")
+print(round(tapply(num(d$neutral_accepts), d$arm, mean, na.rm = TRUE), 2))
+cat("  Experimental pop-ups accepted, mean:\n")
+print(round(tapply(num(d$exp_accepts), d$arm, mean, na.rm = TRUE), 2))
+cat("  diff_accepts (exp - neutral), mean:\n")
+print(round(tapply(num(d$diff_accepts), d$arm, mean, na.rm = TRUE), 2))
 cat("\n")
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -210,9 +212,12 @@ cat("\n")
 # like fragrance — which is worth a great deal at a sample this size.
 for (item in RATED_ITEMS) d[[paste0("d_", item)]] <- num(d[[paste0("diff_", item)]])
 d$d_b5 <- num(d$diff_b5)
+d$d_accepts <- num(d$diff_accepts)
 
-OUTCOMES <- c(RATED_ITEMS, "b5")
-OUTCOME_LABELS <- c(RATED_ITEM_LABELS, b5 = "Downstream choice (ordinal: buy=3..avoid=0)")
+OUTCOMES <- c(RATED_ITEMS, "b5", "accepts")
+OUTCOME_LABELS <- c(RATED_ITEM_LABELS,
+                     b5 = "Downstream choice (ordinal: buy=3..avoid=0)",
+                     accepts = "Pop-ups accepted per brand (0-2, change_spec_v4_final.md)")
 
 # ─────────────────────────────────────────────────────────────────────────────
 # 5. Effect sizes

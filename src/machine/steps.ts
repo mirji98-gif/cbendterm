@@ -7,8 +7,11 @@
  * feelings after a manipulation item you would have to edit this table, not
  * merely make a mistake in a component.
  *
- * v2 (Instrument_v2.md) moves the awareness check to AFTER both blocks
- * (never immediately after a pop-up) and adds a comparative block after it.
+ * change_spec_v4_final.md Part 3: each brand block now has two pop-ups.
+ * 'checkout_N' (was 'popup_N') is the product page with pop-up 1 overlaid,
+ * firing on checkout intent (add-to-bag). 'confirm_N' is the new
+ * order-confirmation screen with pop-up 2 overlaid. 'continuation_N' follows
+ * pop-up 2 only, exactly like the old single continuation screen.
  */
 import type { Session, Step, BlockKey } from './types';
 import { blockAtPosition } from './types';
@@ -18,17 +21,19 @@ const NEXT: Record<Step, Step | null> = {
   consent: 'instructions',
   instructions: 'store_1',
   store_1: 'product_1',
-  product_1: 'popup_1',
-  popup_1: 'continuation_1',
+  product_1: 'checkout_1',
+  checkout_1: 'confirm_1',
+  confirm_1: 'continuation_1',
   continuation_1: 'block_1',
   block_1: 'store_2',
   store_2: 'product_2',
-  product_2: 'popup_2',
-  popup_2: 'continuation_2',
-  continuation_2: 'block_2',
+  product_2: 'checkout_2',
+  checkout_2: 'confirm_2',
+  confirm_2: 'continuation_2',
   // Awareness is reachable ONLY from here — never from block_1 — which is
   // what makes "asked once per brand, after BOTH blocks" a structural
   // property rather than a screen-ordering convention.
+  continuation_2: 'block_2',
   block_2: 'awareness',
   awareness: 'comparative',
   comparative: 'covariates',
@@ -46,8 +51,8 @@ export function nextStep(step: Step): Step | null {
 /** Steps that belong to the shopping task. */
 const SHOPPING_STEPS: ReadonlySet<Step> = new Set<Step>([
   'instructions',
-  'store_1', 'product_1', 'popup_1', 'continuation_1',
-  'store_2', 'product_2', 'popup_2', 'continuation_2',
+  'store_1', 'product_1', 'checkout_1', 'confirm_1', 'continuation_1',
+  'store_2', 'product_2', 'checkout_2', 'confirm_2', 'continuation_2',
 ]);
 
 /** Steps that are part of the instrument, in forced order. */
@@ -110,13 +115,21 @@ export function progressFraction(session: Session): number {
 
 /**
  * Steps where an interrupting reload destroys a measurement that cannot be
- * honestly retaken. Restoring into one of these invalidates that block's
- * timing fields rather than silently re-measuring them.
+ * honestly retaken. Restoring into one of these invalidates the relevant
+ * pop-up's timing fields rather than silently re-measuring them.
  */
 const TIMING_CRITICAL: ReadonlySet<Step> = new Set<Step>([
-  'popup_1', 'continuation_1', 'popup_2', 'continuation_2',
+  'checkout_1', 'confirm_1', 'continuation_1',
+  'checkout_2', 'confirm_2', 'continuation_2',
 ]);
 
 export function isTimingCritical(step: Step): boolean {
   return TIMING_CRITICAL.has(step);
+}
+
+/** Which pop-up a timing-critical step's reload would have interrupted. */
+export function popupKeyForStep(step: Step): 'p1' | 'p2' | null {
+  if (/^checkout_/.test(step)) return 'p1';
+  if (/^confirm_/.test(step) || /^continuation_/.test(step)) return 'p2';
+  return null;
 }

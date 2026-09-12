@@ -56,6 +56,22 @@ export const CONTINUATION = {
   cta: 'Continue',
 };
 
+/**
+ * New screen (change_spec_v4_final.md Part 2): lands after pop-up 1 resolves,
+ * with pop-up 2 overlaid on top of it immediately — there is no participant
+ * action on this screen before pop-up 2 appears. `discountLine` shows only
+ * when pop-up 1 was accepted; no email address is ever collected or
+ * referenced as already-on-file.
+ */
+export const ORDER_CONFIRMATION = {
+  title: 'Order confirmed',
+  body: 'Thank you for shopping with us. We’re getting your order ready.',
+  discountLine: '15% off has been applied to this order.',
+};
+
+/** Shown on the Continuation screen only when pop-up 2 was accepted. */
+export const FOLLOW_CONFIRMED = 'You’re now following — thanks!';
+
 export const BLOCK_INTRO = {
   title: 'A few questions',
   body: 'Now some quick questions about the store you just visited. There are no right answers.',
@@ -86,7 +102,8 @@ export const DEBRIEF = {
   paragraphs: [
     'This was a study about a design tactic called **confirmshaming**: wording the "no" option on a pop-up so that declining feels like admitting something unflattering about yourself.',
     'Both stores were fictitious. **Aurevella** and **Maison Veloure** do not exist, the products are illustrations, and nothing was ever for sale. No order was placed and no payment details were collected at any point.',
-    'The two pop-ups you saw were identical in every respect — same offer, same headline, same buttons, same layout — **except for the wording of the decline button**. One store showed a plain "No thanks". The other showed a version worded to make declining feel like a small confession. Which wording you saw was assigned at random.',
+    'You saw **four pop-ups in total, two on each store** — one at checkout, one on the order-confirmation screen. Within a single store, both pop-ups\' decline buttons were worded identically to each other; one store\'s decline button read a plain "No thanks", the other\'s was worded to make declining feel like a small confession. Which wording a store used was assigned at random — everything else about the two pop-ups (offer, headline, accept button, layout) was identical.',
+    'Even though the pop-ups mentioned adding an email address or following an account for the discount, **no email address or social media account was ever collected**, no input box was ever shown for one, and nothing was sent anywhere — accepting simply moved you on to the next screen.',
     'We measured how you responded — which option you chose, and how long you took — along with your answers to the questions afterwards. That is the whole study.',
   ],
   watchFor: {

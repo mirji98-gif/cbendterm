@@ -1,11 +1,16 @@
 /**
- * ENFORCEMENT TEST for non-negotiable #1.
+ * ENFORCEMENT TEST for non-negotiable #1, extended for
+ * change_spec_v4_final.md Part 2 (two pop-ups per brand).
  *
- * The four decline wordings are the only permitted difference between
- * conditions. This test renders the pop-up in all four, replaces the decline
- * label with a fixed placeholder, and asserts the resulting DOM is
- * byte-identical — headline, offer, accept label, close button, tap-target
- * classes, contrast classes, animation classes and structure alike.
+ * The four decline wordings are the only permitted difference between arms.
+ * This test renders BOTH pop-ups (p1 and p2) in all four conditions, replaces
+ * the decline label with a fixed placeholder, and asserts the resulting DOM
+ * is byte-identical ACROSS ARMS for a given pop-up — headline, offer, accept
+ * label, close button, tap-target classes, contrast classes, animation
+ * classes and structure alike. It also asserts p1 and p2 differ from each
+ * other in copy (they are different pop-ups) but share the exact same
+ * decline wording within one block (Part 2: "never mix levels within a
+ * brand").
  *
  * If this test fails, a second difference has been introduced between
  * conditions and the manipulation is confounded. There is no statistical fix
@@ -14,7 +19,7 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { render, cleanup } from '@testing-library/react';
 import { DECLINE_COPY, type PopupCondition } from '../data/conditions';
-import type { BlockData } from '../machine/types';
+import { emptyPopupResult, type BlockData, type PopupKey } from '../machine/types';
 
 const noop = () => {};
 
@@ -40,58 +45,104 @@ function blockFor(condition: PopupCondition): BlockData {
     brandId: 'aurevella',
     position: 1,
     declineLabel: DECLINE_COPY[condition],
-    choice: null, latencyMs: null, timeToFirstTouchMs: null,
-    cancelledTaps: 0, pointerCancels: 0, pressDwellMs: 0,
-    postDismissDwellMs: null, continuationAutoAdvanced: null,
-    scrollEvents: 0, rageTaps: 0, popupRenderGapMs: null,
-    productViewed: null, timeOnStoreMs: null, timingInvalidated: false,
+    productViewed: null,
+    timeOnStoreMs: null,
+    p1: emptyPopupResult(),
+    p2: emptyPopupResult(),
     ratings: { b1_guilt: null, b2_irritation: null, b3_manipulation: null, b4_trust: null },
     downstreamChoice: null, openEnded: '',
   };
 }
 
-/** Renders a condition and neutralises only the decline string. */
-function normalisedMarkup(condition: PopupCondition): string {
+/** Renders a condition's pop-up and neutralises only the decline string. */
+function normalisedMarkup(condition: PopupCondition, popup: PopupKey): string {
   currentBlock = blockFor(condition);
-  const { container } = render(<Popup blockKey="neutral" />);
+  const { container } = render(<Popup blockKey="neutral" popup={popup} />);
   const html = container.innerHTML;
   cleanup();
   return html.split(DECLINE_COPY[condition]).join('«DECLINE»');
 }
 
-describe('pop-up is identical across conditions', () => {
+const conditions: PopupCondition[] = ['neutral', 'mild', 'strong', 'autonomy'];
+
+describe('pop-up 1 is identical across conditions', () => {
   beforeEach(() => cleanup());
 
-  const conditions: PopupCondition[] = ['neutral', 'mild', 'strong', 'autonomy'];
-
   it('renders byte-identical DOM once the decline label is neutralised', () => {
-    const [baseline, ...rest] = conditions.map(normalisedMarkup);
+    const [baseline, ...rest] = conditions.map((c) => normalisedMarkup(c, 'p1'));
     rest.forEach((markup, i) => {
       expect(
         markup,
         `condition "${conditions[i + 1]}" differs from "neutral" in something ` +
-          'other than the decline wording',
+          'other than the decline wording (pop-up 1)',
       ).toBe(baseline);
     });
   });
+});
 
-  it('actually renders the assigned wording (the manipulation is present)', () => {
+describe('pop-up 2 is identical across conditions', () => {
+  beforeEach(() => cleanup());
+
+  it('renders byte-identical DOM once the decline label is neutralised', () => {
+    const [baseline, ...rest] = conditions.map((c) => normalisedMarkup(c, 'p2'));
+    rest.forEach((markup, i) => {
+      expect(
+        markup,
+        `condition "${conditions[i + 1]}" differs from "neutral" in something ` +
+          'other than the decline wording (pop-up 2)',
+      ).toBe(baseline);
+    });
+  });
+});
+
+describe('pop-up 1 and pop-up 2', () => {
+  beforeEach(() => cleanup());
+
+  it('show the SAME decline wording within one block (never mixed levels)', () => {
     for (const condition of conditions) {
       currentBlock = blockFor(condition);
-      const { getByText } = render(<Popup blockKey="neutral" />);
-      expect(getByText(DECLINE_COPY[condition])).toBeTruthy();
+      const { getAllByText: getAllByText1 } = render(<Popup blockKey="neutral" popup="p1" />);
+      expect(getAllByText1(DECLINE_COPY[condition]).length).toBeGreaterThan(0);
+      cleanup();
+      currentBlock = blockFor(condition);
+      const { getAllByText: getAllByText2 } = render(<Popup blockKey="neutral" popup="p2" />);
+      expect(getAllByText2(DECLINE_COPY[condition]).length).toBeGreaterThan(0);
       cleanup();
     }
   });
 
-  it('gives accept and decline the same tap target and contrast classes', () => {
-    currentBlock = blockFor('strong');
-    const { container } = render(<Popup blockKey="neutral" />);
-    const accept = container.querySelector('[data-control="accept"]')!;
-    const decline = container.querySelector('[data-control="decline"]')!;
-    expect(decline.className).toBe(accept.className);
-    expect(accept.className).toContain('min-h-[52px]');
+  it('differ from each other in headline/subcopy/accept label (they are different pop-ups)', () => {
+    currentBlock = blockFor('neutral');
+    const { getByText: getByText1 } = render(<Popup blockKey="neutral" popup="p1" />);
+    expect(getByText1('Get 15% off this order')).toBeTruthy();
     cleanup();
+    currentBlock = blockFor('neutral');
+    const { getByText: getByText2 } = render(<Popup blockKey="neutral" popup="p2" />);
+    expect(getByText2('Get 15% off your next order')).toBeTruthy();
+    cleanup();
+  });
+
+  it('actually render the assigned wording (the manipulation is present)', () => {
+    for (const popup of ['p1', 'p2'] as const) {
+      for (const condition of conditions) {
+        currentBlock = blockFor(condition);
+        const { getByText } = render(<Popup blockKey="neutral" popup={popup} />);
+        expect(getByText(DECLINE_COPY[condition])).toBeTruthy();
+        cleanup();
+      }
+    }
+  });
+
+  it('give accept and decline the same tap target and contrast classes, on both pop-ups', () => {
+    for (const popup of ['p1', 'p2'] as const) {
+      currentBlock = blockFor('strong');
+      const { container } = render(<Popup blockKey="neutral" popup={popup} />);
+      const accept = container.querySelector('[data-control="accept"]')!;
+      const decline = container.querySelector('[data-control="decline"]')!;
+      expect(decline.className).toBe(accept.className);
+      expect(accept.className).toContain('min-h-[48px]');
+      cleanup();
+    }
   });
 
   it('keeps the four wordings distinct', () => {

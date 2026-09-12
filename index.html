@@ -6,6 +6,21 @@
     <meta name="theme-color" content="#ffffff" />
     <meta name="robots" content="noindex, nofollow" />
     <title>Shop</title>
+    <!--
+      change_spec_v4_final.md Part 7: "Instrument Sans (Google Fonts)". This is
+      the one deliberate external network call in an app that otherwise makes
+      none (PRD's mobile-data reliability goal) — font-display:swap means a
+      slow or failed fetch degrades to the system-ui fallback stack rather
+      than blocking paint or leaving invisible text, so it can't inflate
+      popup_render_gap_ms or break the study on a bad connection; only the
+      typeface itself is at risk, not functionality.
+    -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
   </head>
   <body>
     <div id="root"></div>

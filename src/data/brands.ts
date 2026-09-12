@@ -19,6 +19,11 @@
  * The pop-up itself uses NO brand accent colour: its buttons are neutral
  * near-black in both stores. That keeps tap-target contrast byte-identical
  * across brands as well as across conditions.
+ *
+ * change_spec_v4_final.md Part 7: six products per store (not eight) and
+ * accent colours pinned to the spec's exact tokens — Aurevella deep pine
+ * (#1F4F4A), Maison Veloure deep plum (#5B2E4A). Both are muted, roughly
+ * equal in luminance, and used sparingly (buttons, active states, bag count).
  */
 
 export type BrandId = 'aurevella' | 'veloure';
@@ -59,7 +64,8 @@ export interface Brand {
   products: readonly Product[];
 }
 
-const PRICES = [2450, 1650, 3200, 2890, 1890, 2150, 1450, 890] as const;
+// change_spec_v4_final.md Part 7: six products, no more.
+const PRICES = [2450, 1650, 3200, 2890, 1890, 1450] as const;
 
 const SHAPES: readonly ProductShape[] = [
   'bottle_tall',
@@ -67,9 +73,7 @@ const SHAPES: readonly ProductShape[] = [
   'scarf',
   'sunglasses',
   'cardholder',
-  'travel_set',
   'candle',
-  'keyring',
 ] as const;
 
 const DETAILS = [
@@ -78,9 +82,7 @@ const DETAILS = [
   'Mulberry silk · 90 × 90 cm',
   'Acetate · polarised',
   'Full-grain leather · 4 slots',
-  '3 × 8 ml travel sprays',
   'Soy blend · 200 g · 40 hrs',
-  'Full-grain leather',
 ] as const;
 
 function catalogue(names: readonly string[]): Product[] {
@@ -98,9 +100,9 @@ export const BRANDS: Record<BrandId, Brand> = {
     id: 'aurevella',
     name: 'Aurevella',
     tagline: 'Fragrance & everyday things',
-    accent: '#6D2E52',
-    accentSoft: '#F5ECF2',
-    tile: '#F7F3F5',
+    accent: '#1F4F4A',
+    accentSoft: '#EAF2F0',
+    tile: '#F2F6F5',
     categories: ['New in', 'Fragrance', 'Accessories', 'Gifting'],
     products: catalogue([
       'Velvet Iris',
@@ -108,18 +110,16 @@ export const BRANDS: Record<BrandId, Brand> = {
       'Mulberry Silk Scarf',
       'Acetate Sunglasses — Fawn',
       'Leather Card Holder',
-      'Discovery Set',
       'Fig & Cedar Candle',
-      'Leather Keyring',
     ]),
   },
   veloure: {
     id: 'veloure',
     name: 'Maison Veloure',
     tagline: 'Fragrance & everyday things',
-    accent: '#1F5049',
-    accentSoft: '#EAF2F0',
-    tile: '#F2F6F5',
+    accent: '#5B2E4A',
+    accentSoft: '#F5ECF2',
+    tile: '#F7F3F5',
     categories: ['New in', 'Fragrance', 'Accessories', 'Gifting'],
     products: catalogue([
       'Sillage Noir',
@@ -127,9 +127,7 @@ export const BRANDS: Record<BrandId, Brand> = {
       'Mulberry Silk Scarf',
       'Acetate Sunglasses — Ash',
       'Leather Card Holder',
-      'Discovery Set',
       'Vetiver & Smoke Candle',
-      'Leather Keyring',
     ]),
   },
 };

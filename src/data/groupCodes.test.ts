@@ -1,8 +1,8 @@
 /**
- * ENFORCEMENT TESTS for change_spec_group_codes.md §1 and §7's verification
- * checklist: a valid code decodes to its exact arm/recruiter, an unrecognised
- * or missing code NEVER falls back to a fixed arm, and lookup is
- * case-insensitive and whitespace-tolerant.
+ * ENFORCEMENT TESTS for change_spec_v4_final.md §1 and §9's verification
+ * checklist: each of the three links decodes to its exact arm, an
+ * unrecognised or missing code NEVER falls back to a fixed arm, and lookup
+ * is case-insensitive and whitespace-tolerant.
  */
 import { afterEach, describe, expect, it } from 'vitest';
 import {
@@ -11,18 +11,14 @@ import {
 import { ARMS } from './conditions';
 
 describe('GROUP_CODES table', () => {
-  it('has exactly twelve codes: four recruiters times three arms', () => {
-    expect(Object.keys(GROUP_CODES).length).toBe(12);
+  it('has exactly three codes: one per arm', () => {
+    expect(Object.keys(GROUP_CODES).length).toBe(3);
   });
 
-  it('covers every recruiter × arm combination exactly once', () => {
-    const seen = new Set<string>();
-    for (const { recruiter, arm } of Object.values(GROUP_CODES)) {
-      const key = `${recruiter}:${arm}`;
-      expect(seen.has(key), `duplicate recruiter/arm combination: ${key}`).toBe(false);
-      seen.add(key);
-    }
-    expect(seen.size).toBe(12);
+  it('covers every arm exactly once', () => {
+    const seen = new Set(Object.values(GROUP_CODES));
+    expect(seen.size).toBe(3);
+    for (const arm of ARMS) expect(seen.has(arm)).toBe(true);
   });
 
   it('every code is already lower-case (so normalization is a no-op on the table itself)', () => {
@@ -33,16 +29,20 @@ describe('GROUP_CODES table', () => {
 });
 
 describe('lookupGroupCode — the verification checklist cases', () => {
-  it('k7m2 -> arm mild, recruiter 1', () => {
-    expect(lookupGroupCode('k7m2')).toEqual({ recruiter: 1, arm: 'mild' });
+  it('k7m2 -> mild', () => {
+    expect(lookupGroupCode('k7m2')).toBe('mild');
   });
 
-  it('c9ib -> arm autonomy, recruiter 4', () => {
-    expect(lookupGroupCode('c9ib')).toEqual({ recruiter: 4, arm: 'autonomy' });
+  it('p6hd -> strong', () => {
+    expect(lookupGroupCode('p6hd')).toBe('strong');
+  });
+
+  it('n1ls -> autonomy', () => {
+    expect(lookupGroupCode('n1ls')).toBe('autonomy');
   });
 
   it('an unrecognised code returns null, never a default arm', () => {
-    expect(lookupGroupCode('ZZZZ')).toBeNull();
+    expect(lookupGroupCode('zzzz')).toBeNull();
   });
 
   it('a missing code (null) returns null', () => {
@@ -54,13 +54,13 @@ describe('lookupGroupCode — the verification checklist cases', () => {
   });
 
   it('is case-insensitive', () => {
-    expect(lookupGroupCode('K7M2')).toEqual({ recruiter: 1, arm: 'mild' });
-    expect(lookupGroupCode('K7m2')).toEqual({ recruiter: 1, arm: 'mild' });
+    expect(lookupGroupCode('K7M2')).toBe('mild');
+    expect(lookupGroupCode('K7m2')).toBe('mild');
   });
 
   it('trims surrounding whitespace', () => {
-    expect(lookupGroupCode('  k7m2  ')).toEqual({ recruiter: 1, arm: 'mild' });
-    expect(lookupGroupCode('\tc9ib\n')).toEqual({ recruiter: 4, arm: 'autonomy' });
+    expect(lookupGroupCode('  k7m2  ')).toBe('mild');
+    expect(lookupGroupCode('\tn1ls\n')).toBe('autonomy');
   });
 });
 

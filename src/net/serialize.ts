@@ -1,5 +1,5 @@
 /**
- * Session → one flat CSV row (v2).
+ * Session → one flat CSV row (v4 — change_spec_v4_final.md Part 5).
  *
  * Keys are exactly src/data/columns.ts COLUMN_NAMES, in that order. A test
  * (serialize.test.ts) asserts the two lists match, so a column can never exist
@@ -13,12 +13,12 @@
  * section — so a future bug in this file cannot go unnoticed.
  */
 import { RATED_ITEMS, downstreamOrdinal } from '../data/items';
-import { COLUMN_NAMES, BLOCK_PREFIXES } from '../data/columns';
+import { COLUMN_NAMES, BLOCK_PREFIXES, POPUP_PREFIXES, type PopupPrefix } from '../data/columns';
 import { BRANDS } from '../data/brands';
 import { DECLINE_COPY, responseCode } from '../data/conditions';
 import { isAwarenessCorrect } from '../data/awareness';
 import { recodeBrandChoice, recodeComparativeScale, expBrandIsPositionTwo } from '../data/comparative';
-import type { Session, BlockData, BlockKey } from '../machine/types';
+import type { Session, BlockData, BlockKey, PopupResult } from '../machine/types';
 
 export type Row = Record<string, string | number>;
 
@@ -39,7 +39,8 @@ function str(v: string | null | undefined): string {
 /**
  * Awareness correctness, by CONDITION. `null` when the participant has not
  * reached the awareness screen yet (a checkpoint row), which is distinct from
- * a wrong answer and must not be collapsed into FALSE.
+ * a wrong answer and must not be collapsed into FALSE. Shared by both of a
+ * block's pop-ups — awareness is asked once per BRAND, not once per pop-up.
  */
 function awarenessCorrectByCondition(session: Session, key: BlockKey): boolean | null {
   const order = session.assignment?.order;
@@ -50,30 +51,34 @@ function awarenessCorrectByCondition(session: Session, key: BlockKey): boolean |
   return isAwarenessCorrect(raw, blocks[key].condition);
 }
 
-function blockBehaviouralColumns(session: Session, block: BlockData, prefix: string): Row {
-  const p = (s: string) => `${prefix}_${s}`;
+function popupColumns(session: Session, block: BlockData, popup: PopupPrefix, prefix: string): Row {
+  const p = (s: string) => `${prefix}_${popup}_${s}`;
+  const pop: PopupResult = block[popup];
   const correct = awarenessCorrectByCondition(session, block.key);
+  return {
+    [p('choice')]: str(pop.choice),
+    [p('response_code')]: pop.choice ? responseCode(pop.choice, pop.latencyMs, correct) : '',
+    [p('latency_ms')]: num(pop.latencyMs),
+    [p('time_to_first_touch_ms')]: num(pop.timeToFirstTouchMs),
+    [p('cancelled_taps')]: pop.cancelledTaps,
+    [p('pointer_cancels')]: pop.pointerCancels,
+    [p('press_dwell_ms')]: num(pop.pressDwellMs),
+    [p('post_dismiss_dwell_ms')]: num(pop.postDismissDwellMs),
+    [p('continuation_auto_advanced')]: bool(pop.continuationAutoAdvanced),
+    [p('scroll_events')]: pop.scrollEvents,
+    [p('rage_taps')]: pop.rageTaps,
+    [p('popup_render_gap_ms')]: num(pop.popupRenderGapMs),
+    [p('abandoned')]: bool(pop.choice === null),
+  };
+}
+
+function blockLevelColumns(block: BlockData, prefix: string): Row {
+  const p = (s: string) => `${prefix}_${s}`;
   return {
     [p('condition')]: block.condition,
     [p('brand')]: BRANDS[block.brandId].name,
     [p('block_position')]: String(block.position),
     [p('decline_label')]: block.declineLabel,
-
-    [p('choice')]: str(block.choice),
-    [p('response_code')]: block.choice
-      ? responseCode(block.choice, block.latencyMs, correct)
-      : '',
-
-    [p('latency_ms')]: num(block.latencyMs),
-    [p('time_to_first_touch_ms')]: num(block.timeToFirstTouchMs),
-    [p('cancelled_taps')]: block.cancelledTaps,
-    [p('pointer_cancels')]: block.pointerCancels,
-    [p('press_dwell_ms')]: num(block.pressDwellMs),
-    [p('post_dismiss_dwell_ms')]: num(block.postDismissDwellMs),
-    [p('continuation_auto_advanced')]: bool(block.continuationAutoAdvanced),
-    [p('scroll_events')]: block.scrollEvents,
-    [p('rage_taps')]: block.rageTaps,
-    [p('popup_render_gap_ms')]: num(block.popupRenderGapMs),
     [p('product_viewed')]: str(block.productViewed),
     [p('time_on_store_ms')]: num(block.timeOnStoreMs),
   };
@@ -112,6 +117,25 @@ function diffColumns(blocks: Record<BlockKey, BlockData> | null): Row {
   const eOrd = downstreamOrdinal(blocks.exp.downstreamChoice);
   row.diff_b5 = nOrd != null && eOrd != null ? num(eOrd - nOrd) : '';
   return row;
+}
+
+/** Count of a block's two pop-ups accepted (0-2), or '' if the block never started. */
+function acceptsCount(block: BlockData | undefined): number | '' {
+  if (!block) return '';
+  const resolved = block.p1.choice !== null && block.p2.choice !== null;
+  if (!resolved) return '';
+  return (block.p1.choice === 'accept' ? 1 : 0) + (block.p2.choice === 'accept' ? 1 : 0);
+}
+
+function acceptsColumns(blocks: Record<BlockKey, BlockData> | null): Row {
+  if (!blocks) return { neutral_accepts: '', exp_accepts: '', diff_accepts: '' };
+  const n = acceptsCount(blocks.neutral);
+  const e = acceptsCount(blocks.exp);
+  return {
+    neutral_accepts: n,
+    exp_accepts: e,
+    diff_accepts: n === '' || e === '' ? '' : e - n,
+  };
 }
 
 function awarenessColumns(session: Session): Row {
@@ -171,7 +195,6 @@ export function serializeSession(session: Session, opts: SerializeOptions): Row 
 
   const row: Row = {
     participant_id: session.participantId,
-    recruiter_id: session.recruiterId,
     status: opts.status,
     is_debug: bool(session.isDebug),
     app_version: session.meta.appVersion,
@@ -199,18 +222,19 @@ export function serializeSession(session: Session, opts: SerializeOptions): Row 
   };
 
   for (const prefix of BLOCK_PREFIXES) {
-    Object.assign(
-      row,
-      blocks
-        ? {
-            ...blockBehaviouralColumns(session, blocks[prefix], prefix),
-            ...blockSelfReportColumns(blocks[prefix], prefix),
-          }
-        : emptyBlockColumns(prefix),
-    );
+    if (blocks) {
+      Object.assign(row, blockLevelColumns(blocks[prefix], prefix));
+      for (const popup of POPUP_PREFIXES) {
+        Object.assign(row, popupColumns(session, blocks[prefix], popup, prefix));
+      }
+      Object.assign(row, blockSelfReportColumns(blocks[prefix], prefix));
+    } else {
+      Object.assign(row, emptyBlockColumns(prefix));
+    }
   }
 
   Object.assign(row, diffColumns(blocks));
+  Object.assign(row, acceptsColumns(blocks));
   Object.assign(row, awarenessColumns(session));
   Object.assign(row, comparativeColumns(session));
 
