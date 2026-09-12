@@ -9,17 +9,21 @@
  * response. It is also how the R script is regression-tested.
  *
  * The simulated effect follows the PRD's own predictions: strong shame raises
- * anger and perceived manipulative intent most, mild sits in between, and the
- * autonomy framing is close to neutral. Do not read anything into the numbers —
- * they are invented.
+ * irritation and perceived manipulation most, mild sits in between, and the
+ * autonomy framing is close to neutral. Comparative and awareness answers are
+ * simulated with the SAME recode functions the app uses (imported, not
+ * reimplemented), so this file doubles as another exerciser of that logic.
+ * Do not read anything into the numbers — they are invented.
  */
 import { writeFileSync, mkdirSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { BLOCK_ITEMS } from '../src/data/items';
+import { RATED_ITEMS, type DownstreamChoice } from '../src/data/items';
 import { COLUMN_NAMES } from '../src/data/columns';
 import { ASSIGNMENT_SEQUENCE, DESIGN_N } from '../src/data/sequence';
 import { DECLINE_COPY, type Arm, type Choice } from '../src/data/conditions';
+import type { AwarenessAnswer } from '../src/data/awareness';
+import type { ComparativeRaw } from '../src/data/comparative';
 import { serializeSession } from '../src/net/serialize';
 import { blockAtPosition, brandForBlock, type BlockData, type BlockKey, type Session } from '../src/machine/types';
 
@@ -38,16 +42,22 @@ function gauss(mean = 0, sd = 1): number {
   return mean + sd * Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
 }
 const clamp7 = (x: number) => Math.max(1, Math.min(7, Math.round(x)));
+function pick<T>(items: readonly T[]): T {
+  return items[Math.min(items.length - 1, Math.floor(rand() * items.length))]!;
+}
 
-/** Simulated experimental-minus-neutral shift per factor, by arm. */
+/** Simulated experimental-minus-neutral shift per rated item, by arm. */
 const EFFECT: Record<Arm, Record<string, number>> = {
-  mild:     { anger: 0.5, guilt: 0.6, imi: 0.9,  attrib: 0.6, att_popup: -0.7, att_brand: -0.3, trust: -0.3, cred: -0.2, happy: -0.2, pi: -0.3, ri: -0.4, si: 0.3 },
-  strong:   { anger: 1.4, guilt: 0.5, imi: 1.7,  attrib: 1.3, att_popup: -1.4, att_brand: -0.9, trust: -0.8, cred: -0.5, happy: -0.5, pi: -0.9, ri: -1.1, si: 0.8 },
-  autonomy: { anger: 0.1, guilt: 0.1, imi: 0.2,  attrib: 0.1, att_popup: -0.1, att_brand: 0.0,  trust: 0.0,  cred: 0.0,  happy: 0.2,  pi: 0.0,  ri: -0.1, si: 0.0 },
+  mild:     { b1_guilt: 0.6, b2_irritation: 0.5, b3_manipulation: 0.9, b4_trust: -0.3 },
+  strong:   { b1_guilt: 0.5, b2_irritation: 1.4, b3_manipulation: 1.7, b4_trust: -0.8 },
+  autonomy: { b1_guilt: 0.1, b2_irritation: 0.1, b3_manipulation: 0.2, b4_trust: 0.0 },
 };
 
 /** Simulated latency inflation (ms) on the experimental pop-up, by arm. */
 const LATENCY_SHIFT: Record<Arm, number> = { mild: 350, strong: 900, autonomy: 60 };
+
+/** Probability the downstream choice skews toward avoid/competitor, by arm. */
+const AVOIDANCE_SHIFT: Record<Arm, number> = { mild: 0.15, strong: 0.35, autonomy: 0.05 };
 
 function pickChoice(condition: 'neutral' | Arm): Choice {
   const r = rand();
@@ -55,6 +65,16 @@ function pickChoice(condition: 'neutral' | Arm): Choice {
   if (condition === 'strong') return r < 0.13 ? 'accept' : r < 0.5 ? 'decline_button' : r < 0.9 ? 'close_x' : r < 0.98 ? 'backdrop' : 'timeout';
   if (condition === 'mild') return r < 0.19 ? 'accept' : r < 0.62 ? 'decline_button' : r < 0.93 ? 'close_x' : 'backdrop';
   return r < 0.26 ? 'accept' : r < 0.75 ? 'decline_button' : r < 0.95 ? 'close_x' : 'backdrop';
+}
+
+function pickDownstream(condition: 'neutral' | Arm): DownstreamChoice {
+  const shift = condition === 'neutral' ? 0 : AVOIDANCE_SHIFT[condition];
+  const r = rand();
+  if (r < 0.3 - shift * 0.5) return 'buy';
+  if (r < 0.55) return 'compare';
+  if (r < 0.55 + shift) return 'competitor';
+  if (r < 0.85 + shift * 0.3) return 'avoid';
+  return 'not_sure';
 }
 
 function makeBlock(
@@ -67,33 +87,13 @@ function makeBlock(
   const condition = key === 'neutral' ? ('neutral' as const) : arm;
   const shift = key === 'neutral' ? {} : EFFECT[arm];
 
-  // One latent draw per factor per block. Without this, items within a scale
-  // are independent and the synthetic Cronbach's alphas come out near zero —
-  // which would make the dry run misleading about what real data looks like.
-  const latent: Record<string, number> = {};
-  for (const item of BLOCK_ITEMS) {
-    if (latent[item.factor] === undefined) latent[item.factor] = gauss(0, 0.85);
-  }
-
-  const responses: Record<string, number | null> = {};
-  for (const item of BLOCK_ITEMS) {
-    const base =
-      item.factor === 'anger' || item.factor === 'guilt' || item.factor === 'imi' || item.factor === 'attrib'
-        ? 2.6
-        : item.factor === 'distractor'
-          ? 3.2
-          : 4.6;
-    const delta = shift[item.factor] ?? 0;
-
-    // Simulate on the CONSTRUCT scale (high = more of the factor), then map to
-    // the RAW scale the participant would have seen. A reverse-keyed item is
-    // the mirror of its construct, so the effect, the person intercept and the
-    // shared latent must ALL flip together — flipping only the effect leaves
-    // reverse-keyed items anti-correlated with their own scale, which shows up
-    // as a negative Cronbach's alpha once analysis_starter.R un-reverses them.
-    const construct =
-      base + delta + personIntercept + latent[item.factor]! + gauss(0, 0.55);
-    responses[item.id] = clamp7(item.reverse ? 8 - construct : construct);
+  const ratings: BlockData['ratings'] = {
+    b1_guilt: null, b2_irritation: null, b3_manipulation: null, b4_trust: null,
+  };
+  for (const item of RATED_ITEMS) {
+    const base = item.id === 'b4_trust' ? 4.6 : 2.6;
+    const delta = shift[item.id] ?? 0;
+    ratings[item.id] = clamp7(base + delta + personIntercept + gauss(0, 0.6));
   }
 
   const choice = pickChoice(condition);
@@ -118,8 +118,9 @@ function makeBlock(
     productViewed: 'bottle_tall',
     timeOnStoreMs: Math.round(Math.max(4000, gauss(24000, 9000))),
     timingInvalidated: false,
-    responses,
-    itemOrder: {},
+    ratings,
+    downstreamChoice: pickDownstream(condition),
+    openEnded: rand() < 0.5 ? 'Felt a bit pushy, so I closed it.' : '',
   };
 }
 
@@ -127,27 +128,63 @@ const rows: Record<string, string | number>[] = [];
 
 for (let i = 0; i < DESIGN_N; i++) {
   const slot = ASSIGNMENT_SEQUENCE[i]!;
-  const personIntercept = gauss(0, 0.55);
+  const personIntercept = gauss(0, 0.5);
   const startedAt = new Date(Date.UTC(2026, 8, 14 + Math.floor(i / 7), 9 + (i % 7), (i * 7) % 60)).toISOString();
 
+  const neutralKey = blockAtPosition(slot.order, 1) === 'neutral' ? 'neutral' : 'exp';
+  const brand1Key: BlockKey = blockAtPosition(slot.order, 1);
+  const brand2Key: BlockKey = blockAtPosition(slot.order, 2);
+
+  // Awareness: more salient conditions are recognised more often.
+  const awarenessAccuracy: Record<'neutral' | Arm, number> = {
+    neutral: 0.55, mild: 0.6, strong: 0.8, autonomy: 0.5,
+  };
+  const awareFor = (key: BlockKey): AwarenessAnswer => {
+    const condition = key === neutralKey ? 'neutral' : slot.arm;
+    return rand() < awarenessAccuracy[condition] ? condition : 'dont_remember';
+  };
+
+  // Comparative: skewed toward "the experimental brand felt worse", more so
+  // for stronger arms, but built from brand ids the same way the app does.
+  const expBrandId = brandForBlock(slot.pairing, 'exp');
+  const neutralBrandId = brandForBlock(slot.pairing, 'neutral');
+  const manipulationSkew: Record<Arm, number> = { mild: 0.55, strong: 0.75, autonomy: 0.4 };
+  const trustSkew: Record<Arm, number> = { mild: 0.45, strong: 0.65, autonomy: 0.35 };
+
+  const c1Raw: ComparativeRaw =
+    rand() < manipulationSkew[slot.arm] ? expBrandId : rand() < 0.7 ? neutralBrandId : 'both';
+  const c2Raw: ComparativeRaw = rand() < trustSkew[slot.arm] ? neutralBrandId : expBrandId;
+  const c4Raw: ComparativeRaw = rand() < trustSkew[slot.arm] * 0.8 ? neutralBrandId : pick([expBrandId, 'compare_further']);
+  // Raw C3/C5 are anchored "Brand 1 vs Brand 2", not "neutral vs exp" — build
+  // them from whichever brand is actually at position 1, mirroring a real
+  // participant who has no notion of "experimental".
+  const brand1IsNeutral = brand1Key === 'neutral';
+  const trustInBrand1 = brand1IsNeutral
+    ? 4 + manipulationSkew[slot.arm] * 2 + gauss(0, 0.8) // Brand 1 (neutral) trusted more
+    : 4 - manipulationSkew[slot.arm] * 2 + gauss(0, 0.8);
+  const c3Raw = clamp7(trustInBrand1);
+  const c5Raw = clamp7(trustInBrand1 + gauss(0, 0.5));
+
   const session: Session = {
-    schema: 1,
+    schema: 2,
     step: 'debrief',
-    sectionIndex: 0,
     participantId: `sim-${String(i + 1).padStart(3, '0')}`,
     recruiterId: String((i % 4) + 1),
     isDebug: false,
-    cutTier: 0,
     assignment: { source: 'server', slot: slot.slot, arm: slot.arm, order: slot.order, pairing: slot.pairing },
     blocks: {
       neutral: makeBlock('neutral', slot.arm, slot.order, slot.pairing, personIntercept),
       exp: makeBlock('exp', slot.arm, slot.order, slot.pairing, personIntercept),
     },
     endMatter: {
-      recognitionNeutral: rand() < 0.62 ? 'neutral' : rand() < 0.5 ? 'dont_remember' : 'mild',
-      recognitionExp: rand() < (slot.arm === 'strong' ? 0.78 : 0.6) ? slot.arm : 'dont_remember',
-      openEnded: rand() < 0.8 ? 'The second one felt a bit pushy, so I closed it.' : '',
-      openEndedSkipped: rand() >= 0.8,
+      awareBrand1Raw: awareFor(brand1Key),
+      awareBrand2Raw: awareFor(brand2Key),
+      c1Raw,
+      c2Raw,
+      c3Raw,
+      c4Raw,
+      c5Raw,
+      c6Open: rand() < 0.4 ? 'The second one felt more pushy than the first.' : '',
       popupFreq: String(Math.min(5, Math.max(1, Math.round(gauss(3.6, 1))))),
       dpAwareness: rand() < 0.3 ? 'yes' : rand() < 0.8 ? 'no' : 'not_sure',
       shoppingFreq: String(Math.min(5, Math.max(1, Math.round(gauss(3.4, 1))))),
@@ -172,7 +209,7 @@ for (let i = 0; i < DESIGN_N; i++) {
     submitError: null,
   };
 
-  rows.push(serializeSession(session, { status: 'complete', durationS: Math.max(240, gauss(560, 120)) }));
+  rows.push(serializeSession(session, { status: 'complete', durationS: Math.max(200, gauss(340, 80)) }));
 }
 
 // Two dropouts and one debug row, so the exclusion logic in the R script is

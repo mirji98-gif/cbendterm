@@ -1,14 +1,23 @@
 /**
- * Session → one flat CSV row.
+ * Session → one flat CSV row (v2).
  *
  * Keys are exactly src/data/columns.ts COLUMN_NAMES, in that order. A test
  * (serialize.test.ts) asserts the two lists match, so a column can never exist
  * in one place and not the other.
+ *
+ * Recoding (comparative block, and the difference scores) happens HERE,
+ * not in R: the app has the true assignment available at the moment of
+ * serialization, which is the most reliable place to compute it.
+ * analysis_starter.R re-derives the same values from the raw columns as a
+ * verification pass and flags any mismatch — see its "Recoding verification"
+ * section — so a future bug in this file cannot go unnoticed.
  */
-import { BLOCK_ITEMS } from '../data/items';
+import { RATED_ITEMS, downstreamOrdinal } from '../data/items';
 import { COLUMN_NAMES, BLOCK_PREFIXES } from '../data/columns';
 import { BRANDS } from '../data/brands';
 import { DECLINE_COPY, responseCode } from '../data/conditions';
+import { isAwarenessCorrect } from '../data/awareness';
+import { recodeBrandChoice, recodeComparativeScale, expBrandIsPositionTwo } from '../data/comparative';
 import type { Session, BlockData, BlockKey } from '../machine/types';
 
 export type Row = Record<string, string | number>;
@@ -28,24 +37,23 @@ function str(v: string | null | undefined): string {
 }
 
 /**
- * Recognition correctness. `null` when the participant has not reached the
- * recognition screen yet (a checkpoint row), which is distinct from a wrong
- * answer and must not be collapsed into FALSE.
+ * Awareness correctness, by CONDITION. `null` when the participant has not
+ * reached the awareness screen yet (a checkpoint row), which is distinct from
+ * a wrong answer and must not be collapsed into FALSE.
  */
-function recognitionCorrect(session: Session, key: BlockKey): boolean | null {
-  const answer = key === 'neutral'
-    ? session.endMatter.recognitionNeutral
-    : session.endMatter.recognitionExp;
-  if (answer === null) return null;
-  const expected = key === 'neutral' ? 'neutral' : session.assignment?.arm;
-  if (!expected) return null;
-  return answer === expected;
+function awarenessCorrectByCondition(session: Session, key: BlockKey): boolean | null {
+  const order = session.assignment?.order;
+  const blocks = session.blocks;
+  if (!order || !blocks) return null;
+  const position = blocks[key].position;
+  const raw = position === 1 ? session.endMatter.awareBrand1Raw : session.endMatter.awareBrand2Raw;
+  return isAwarenessCorrect(raw, blocks[key].condition);
 }
 
-function blockColumns(session: Session, block: BlockData, prefix: string): Row {
+function blockBehaviouralColumns(session: Session, block: BlockData, prefix: string): Row {
   const p = (s: string) => `${prefix}_${s}`;
-  const correct = recognitionCorrect(session, block.key);
-  const row: Row = {
+  const correct = awarenessCorrectByCondition(session, block.key);
+  return {
     [p('condition')]: block.condition,
     [p('brand')]: BRANDS[block.brandId].name,
     [p('block_position')]: String(block.position),
@@ -69,10 +77,17 @@ function blockColumns(session: Session, block: BlockData, prefix: string): Row {
     [p('product_viewed')]: str(block.productViewed),
     [p('time_on_store_ms')]: num(block.timeOnStoreMs),
   };
+}
 
-  for (const item of BLOCK_ITEMS) {
-    row[p(item.id)] = num(block.responses[item.id] ?? null);
+function blockSelfReportColumns(block: BlockData, prefix: string): Row {
+  const p = (s: string) => `${prefix}_${s}`;
+  const row: Row = {};
+  for (const item of RATED_ITEMS) {
+    row[p(item.id)] = num(block.ratings[item.id] ?? null);
   }
+  row[p('b5_raw')] = str(block.downstreamChoice);
+  row[p('b5_ord')] = num(downstreamOrdinal(block.downstreamChoice));
+  row[p('b6_open')] = block.openEnded;
   return row;
 }
 
@@ -83,6 +98,64 @@ function emptyBlockColumns(prefix: string): Row {
     if (name.startsWith(`${prefix}_`)) row[name] = '';
   }
   return row;
+}
+
+function diffColumns(blocks: Record<BlockKey, BlockData> | null): Row {
+  const row: Row = {};
+  if (!blocks) return row;
+  for (const item of RATED_ITEMS) {
+    const n = blocks.neutral.ratings[item.id];
+    const e = blocks.exp.ratings[item.id];
+    row[`diff_${item.id}`] = n != null && e != null ? num(e - n) : '';
+  }
+  const nOrd = downstreamOrdinal(blocks.neutral.downstreamChoice);
+  const eOrd = downstreamOrdinal(blocks.exp.downstreamChoice);
+  row.diff_b5 = nOrd != null && eOrd != null ? num(eOrd - nOrd) : '';
+  return row;
+}
+
+function awarenessColumns(session: Session): Row {
+  const e = session.endMatter;
+  return {
+    aware_brand1_raw: str(e.awareBrand1Raw),
+    aware_brand2_raw: str(e.awareBrand2Raw),
+    aware_neutral_correct: bool(awarenessCorrectByCondition(session, 'neutral')),
+    aware_exp_correct: bool(awarenessCorrectByCondition(session, 'exp')),
+  };
+}
+
+function comparativeColumns(session: Session): Row {
+  const e = session.endMatter;
+  const blocks = session.blocks;
+  const order = session.assignment?.order;
+  if (!blocks || !order) {
+    return {
+      c1_raw: '', c2_raw: '', c3_raw: '', c4_raw: '', c5_raw: '', c6_open: '',
+      c1_exp_more_manipulative: '', c2_trust_exp_more: '', c3_recoded: '',
+      c4_choose_exp: '', c5_recoded: '',
+    };
+  }
+  const expBrand = blocks.exp.brandId;
+  const brand2IsExp = expBrandIsPositionTwo(order);
+
+  return {
+    c1_raw: str(e.c1Raw),
+    c2_raw: str(e.c2Raw),
+    c3_raw: num(e.c3Raw),
+    c4_raw: str(e.c4Raw),
+    c5_raw: num(e.c5Raw),
+    c6_open: e.c6Open,
+
+    c1_exp_more_manipulative: bool(boolFromZeroOne(recodeBrandChoice(e.c1Raw, expBrand))),
+    c2_trust_exp_more: bool(boolFromZeroOne(recodeBrandChoice(e.c2Raw, expBrand))),
+    c3_recoded: num(recodeComparativeScale(e.c3Raw, brand2IsExp)),
+    c4_choose_exp: bool(boolFromZeroOne(recodeBrandChoice(e.c4Raw, expBrand))),
+    c5_recoded: num(recodeComparativeScale(e.c5Raw, brand2IsExp)),
+  };
+}
+
+function boolFromZeroOne(v: 0 | 1 | null): boolean | null {
+  return v === null ? null : v === 1;
 }
 
 export interface SerializeOptions {
@@ -102,7 +175,6 @@ export function serializeSession(session: Session, opts: SerializeOptions): Row 
     status: opts.status,
     is_debug: bool(session.isDebug),
     app_version: session.meta.appVersion,
-    cut_tier: session.cutTier,
 
     assignment_source: a ? a.source : '',
     slot: a ? a.slot : '',
@@ -130,20 +202,21 @@ export function serializeSession(session: Session, opts: SerializeOptions): Row 
   for (const prefix of BLOCK_PREFIXES) {
     Object.assign(
       row,
-      blocks ? blockColumns(session, blocks[prefix], prefix) : emptyBlockColumns(prefix),
+      blocks
+        ? {
+            ...blockBehaviouralColumns(session, blocks[prefix], prefix),
+            ...blockSelfReportColumns(blocks[prefix], prefix),
+          }
+        : emptyBlockColumns(prefix),
     );
   }
 
+  Object.assign(row, diffColumns(blocks));
+  Object.assign(row, awarenessColumns(session));
+  Object.assign(row, comparativeColumns(session));
+
   const e = session.endMatter;
   Object.assign(row, {
-    recognition_neutral: str(e.recognitionNeutral),
-    recognition_exp: str(e.recognitionExp),
-    recognition_correct_neutral: bool(recognitionCorrect(session, 'neutral')),
-    recognition_correct_exp: bool(recognitionCorrect(session, 'exp')),
-
-    open_ended: e.openEnded,
-    open_ended_skipped: bool(e.openEndedSkipped),
-
     popup_freq: str(e.popupFreq),
     dp_awareness: str(e.dpAwareness),
     shopping_freq: str(e.shoppingFreq),

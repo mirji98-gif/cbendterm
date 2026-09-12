@@ -3,12 +3,15 @@
 A self-administered web app that runs a controlled confirmshaming experiment end to end: mock
 storefront → discount pop-up → silent behavioural logging → questionnaire → debrief → Google Sheet.
 
-Built to the spec in [`PRD_confirmshaming_experiment_app.md`](PRD_confirmshaming_experiment_app.md).
-Target: **N = 40**, ~8–10 minutes per participant, mobile-first.
+Built to the spec in [`PRD_confirmshaming_experiment_app.md`](PRD_confirmshaming_experiment_app.md),
+with its questionnaire (§4 and §5) replaced by [`Instrument_v2.md`](Instrument_v2.md) — five
+single-item measures per pop-up instead of the original 36, traded for completion at N = 40 on
+phones. Everything else (design, storefront, pop-up, event logging, data layer) is unchanged.
+Target: **N = 40**, ~6 minutes per participant, mobile-first.
 
 ---
 
-## The four things that must not drift
+## The things that must not drift
 
 These are experimental-validity requirements, and each is enforced by a test rather than by care.
 `npm test` fails if any of them is broken.
@@ -16,9 +19,12 @@ These are experimental-validity requirements, and each is enforced by a test rat
 | Requirement | Enforced by |
 | --- | --- |
 | The decline wording is the **only** difference between conditions | `src/screens/Popup.identical.test.tsx` renders all four conditions, blanks the decline label, asserts byte-identical DOM |
-| Emotions are measured before any manipulation/intent item; no back navigation | `src/machine/steps.test.ts` |
+| Feelings (guilt, irritation) are measured before the manipulation item; no back navigation | `src/machine/steps.test.ts` |
 | Every event carries a `performance.now()` stamp from one clock | `src/instrumentation/clock.test.ts` greps the source for `Date.now` / `performance.now` outside `clock.ts` |
 | No progress bar or study cue during the shopping steps | `src/machine/steps.test.ts` |
+| Awareness is asked once per brand, only after BOTH blocks; never quotes a literal decline wording | `src/machine/steps.test.ts` |
+| The brand-trust item is level-framed, not change-framed | `src/machine/steps.test.ts` |
+| Comparative answers are recoded relative to the experimental brand, never presentation position | `src/data/comparative.test.ts` |
 
 If a test here fails, do not update it to pass. It is telling you the manipulation has been
 confounded, and there is no statistical fix for that after collection.
@@ -88,7 +94,7 @@ On Vercel, add `VITE_ENDPOINT_URL` under *Settings → Environment Variables* an
 **7. Check it.** Open `<YOUR_EXEC_URL>?action=ping` in a browser. You should see:
 
 ```json
-{"ok":true,"columns":145,"slots":52}
+{"ok":true,"columns":100,"slots":52}
 ```
 
 If `columns` does not match what `npm run gen` printed, you pasted a stale `Code.gs`.
@@ -153,9 +159,11 @@ Rscript analysis_starter.R analysis/synthetic_sample.csv   # dry run, before any
 Rscript analysis_starter.R path/to/your_export.csv         # the real thing
 ```
 
-Base R only — nothing to install. It reverse-codes, builds scale scores with Cronbach's alpha,
-recomputes the response-type coding, computes within-person (experimental − neutral) difference
-scores, and compares the three arms with Hedges' *g* and 95% CIs. Output lands in `analysis/output/`.
+Base R only — nothing to install. It verifies the app's own recoding (difference scores and the
+comparative block's brand-relative recodes — see below), recomputes the response-type coding, and
+compares the three arms on the four rated items and the downstream choice with Hedges' *g* and 95%
+CIs. There is no Cronbach's alpha section: Instrument v2 has no multi-item scale to compute it over.
+Output lands in `analysis/output/`.
 
 `analysis/synthetic_sample.csv` is 40 simulated participants following the real assignment sequence,
 with a plausible effect built in. It exists so you can run the whole pipeline and build your slide
@@ -163,18 +171,26 @@ templates **before** collecting a single response. Regenerate with
 `npx tsx scripts/make-synthetic-csv.ts`. The numbers in it are invented — do not read anything into
 them.
 
-Scale definitions and reverse-coding flags live in `analysis/generated_scales.R`, generated from the
-item bank. Don't edit it: change `src/data/items.ts` and run `npm run gen`.
+The rated-item text and the downstream-choice ordinal mapping live in `analysis/generated_scales.R`,
+generated from the item bank. Don't edit it: change `src/data/items.ts` and run `npm run gen`.
+
+**The comparative block (screen 11) is corroborating evidence, not primary evidence.** Asking
+participants to compare the two pop-ups directly makes the manipulation salient. Primary evidence is
+the behavioural logs and the B1–B5 difference scores. If the comparative section contradicts them,
+believe the behavioural data — `codebook.md` §6 and the R script both say so where that section
+prints.
 
 ---
 
 ## Changing the instrument
 
-Everything about the questionnaire lives in **`src/data/items.ts`**. `codebook.md`, the CSV columns,
-the Sheet header and the R reverse-code vector are all generated from it, so they cannot drift.
+The rated items live in **`src/data/items.ts`**; the awareness check in **`src/data/awareness.ts`**;
+the comparative block (including the brand-relative recoding functions) in
+**`src/data/comparative.ts`**. `codebook.md`, the CSV columns and `analysis/generated_scales.R` are
+all generated from these three files, so they cannot drift.
 
 ```bash
-# edit src/data/items.ts
+# edit src/data/items.ts, awareness.ts or comparative.ts
 npm run gen        # regenerates codebook.md, Code.gs, generated_scales.R
 npm run roundtrip  # confirms the client and the sheet header still agree
 ```
@@ -183,19 +199,9 @@ Then **re-paste `apps-script/Code.gs`** and deploy a new version. If you change 
 redeploying, the Apps Script appends the unknown columns rather than dropping them — but the sheet
 order will no longer match the codebook.
 
-### If piloting runs long
-
-`src/data/config.ts` → `CUT_TIER`, following the PRD's own cut order:
-
-| Tier | Drops |
-| --- | --- |
-| `0` | nothing (full instrument) |
-| `1` | credibility trio, first block only |
-| `2` | + the happy/amused emotion factor |
-| `3` | + switching intention |
-
-IMI and the anger factor are never cut. Raise one tier at a time, run `npm run gen`, and lower
-`STATED_DURATION` in `src/data/copy.ts` to match what you actually measure.
+Instrument v2 has no burden-cut-tier system (that was a v1 mechanism for a 72-item instrument). If
+piloting still runs long, cut a question directly and regenerate — there isn't enough left to
+justify a tiered system.
 
 ---
 
@@ -218,11 +224,12 @@ sessions over the exclusion threshold.
 ## Project structure
 
 ```
-PRD_confirmshaming_experiment_app.md   the spec
-codebook.md                            GENERATED — every column, scale, reverse flag
-analysis_starter.R                     scoring, alphas, difference scores, effect sizes
+PRD_confirmshaming_experiment_app.md   the original spec
+Instrument_v2.md                       replaces PRD §4-5 — the shortened questionnaire
+codebook.md                            GENERATED — every column, scale, recoding rule
+analysis_starter.R                     recoding verification, difference scores, effect sizes
 analysis/
-  generated_scales.R                   GENERATED — scale defs + reverse vector for R
+  generated_scales.R                   GENERATED — rated-item text + ordinal mapping for R
   synthetic_sample.csv                 GENERATED — 40 simulated participants
 apps-script/Code.gs                    GENERATED — paste into the Apps Script editor
 scripts/
@@ -233,25 +240,32 @@ scripts/
   roundtrip-test.ts                    26 end-to-end assertions on the data layer
   make-synthetic-csv.ts                the dry-run dataset
 src/
-  data/items.ts                        THE ITEM BANK — single source of truth
-  data/columns.ts                      THE CSV CONTRACT — 145 columns
+  data/items.ts                        THE RATED ITEMS (B1-B4) + downstream choice (B5)
+  data/awareness.ts                    the awareness check (screen 10)
+  data/comparative.ts                  the comparative block + brand-relative recoding (screen 11)
+  data/columns.ts                      THE CSV CONTRACT — 100 columns
   data/conditions.ts                   the four decline wordings, and nothing else per-condition
   data/sequence.ts                     GENERATED — the assignment sequence
   data/{brands,copy,config}.ts
   machine/                             steps, reducer, persistence, session provider
   instrumentation/clock.ts             the only timer in the app
   instrumentation/popupTelemetry.ts    latency, cancelled taps, rage taps, dwell
-  net/{api,serialize}.ts               transport and the row builder
+  net/{api,serialize}.ts               transport and the row builder (recoding happens here)
   screens/                             one component per step
 ```
 
 ---
 
-## Deviations from the PRD
+## Deviations from the PRD / v1 instrument
 
-Each is deliberate, and each is listed with its reasoning in [`codebook.md`](codebook.md) §9 so the
-write-up can state it rather than discover it. The two that matter most:
+Each is deliberate, and each is listed with its reasoning in [`codebook.md`](codebook.md) §11 so the
+write-up can state it rather than discover it. The ones that matter most:
 
+- **Instrument v2** replaces the original 36-items-per-block battery with five single-item measures
+  per pop-up ([`Instrument_v2.md`](Instrument_v2.md)). Traded away: Cronbach's alpha, the credibility
+  axis, brand attributions, the guilt/anger/amusement factor structure. Kept: perceived manipulation,
+  irritation (the mediator), brand trust, a downstream behavioural choice, awareness, and the
+  within-person difference score.
 - **`mode: 'no-cors'` → CORS-simple `text/plain` POST.** An opaque response resolves successfully
   even when the server returned a 500, so the retry-and-rescue logic the PRD also asks for could
   never have fired. A dropped row would have been indistinguishable from a saved one.

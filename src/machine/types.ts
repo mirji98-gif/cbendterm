@@ -3,7 +3,9 @@
  */
 import type { Arm, BlockOrder, BrandPairing, Choice, PopupCondition } from '../data/conditions';
 import type { BrandId } from '../data/brands';
-import type { CutTier, SectionId } from '../data/items';
+import type { RatedItemId, DownstreamChoice } from '../data/items';
+import type { AwarenessAnswer } from '../data/awareness';
+import type { ComparativeRaw } from '../data/comparative';
 
 export type AssignmentSource = 'server' | 'fallback' | 'debug';
 
@@ -51,17 +53,30 @@ export interface BlockData {
    */
   timingInvalidated: boolean;
 
-  // ── self-report: item id → 1..7, null = not yet answered / cut ──
-  responses: Record<string, number | null>;
-  /** Presentation order actually used per section, for the audit trail. */
-  itemOrder: Partial<Record<SectionId, string[]>>;
+  // ── self-report v2: B1–B4 rated, B5 downstream choice, B6 open-ended ──
+  ratings: Record<RatedItemId, number | null>;
+  downstreamChoice: DownstreamChoice | null;
+  /** Optional, skippable immediately — no minimum length, no forced wait. */
+  openEnded: string;
 }
 
 export interface EndMatter {
-  recognitionNeutral: string | null;
-  recognitionExp: string | null;
-  openEnded: string;
-  openEndedSkipped: boolean;
+  // Awareness (screen 10), keyed by PRESENTATION POSITION, not condition —
+  // see src/data/comparative.ts for why position and condition must not be
+  // conflated.
+  awareBrand1Raw: AwarenessAnswer | null;
+  awareBrand2Raw: AwarenessAnswer | null;
+
+  // Comparative block (screen 11). Raw values only; recoding relative to the
+  // experimental brand happens at serialization time (src/net/serialize.ts),
+  // where the true assignment is available.
+  c1Raw: ComparativeRaw | null;
+  c2Raw: ComparativeRaw | null;
+  c3Raw: number | null;
+  c4Raw: ComparativeRaw | null;
+  c5Raw: number | null;
+  c6Open: string;
+
   popupFreq: string | null;
   dpAwareness: string | null;
   shoppingFreq: string | null;
@@ -105,8 +120,8 @@ export type Step =
   | 'popup_2'
   | 'continuation_2'
   | 'block_2'
-  | 'recognition'
-  | 'open_ended'
+  | 'awareness'
+  | 'comparative'
   | 'covariates'
   | 'demographics'
   | 'submitting'
@@ -117,12 +132,9 @@ export interface Session {
   /** Bumped when the shape changes, so stale localStorage is discarded. */
   schema: number;
   step: Step;
-  /** Section index within the current questionnaire block step. */
-  sectionIndex: number;
   participantId: string;
   recruiterId: string;
   isDebug: boolean;
-  cutTier: CutTier;
   assignment: Assignment | null;
   /** Null until assignment resolves. Keyed by condition. */
   blocks: Record<BlockKey, BlockData> | null;

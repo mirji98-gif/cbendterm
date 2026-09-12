@@ -45,7 +45,8 @@ function blockFor(condition: PopupCondition): BlockData {
     postDismissDwellMs: null, continuationAutoAdvanced: null,
     scrollEvents: 0, rageTaps: 0, popupRenderGapMs: null,
     productViewed: null, timeOnStoreMs: null, timingInvalidated: false,
-    responses: {}, itemOrder: {},
+    ratings: { b1_guilt: null, b2_irritation: null, b3_manipulation: null, b4_trust: null },
+    downstreamChoice: null, openEnded: '',
   };
 }
 

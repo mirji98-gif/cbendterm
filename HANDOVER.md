@@ -7,12 +7,18 @@ pop-up appears, and the only thing that changes between participants is the word
 decline button. It logs how they respond, questions them, and debriefs them. This document is
 what exists, why it's built the way it is, and what's still open.
 
+**The questionnaire is on its second version.** [`Instrument_v2.md`](Instrument_v2.md) replaces
+the original 36-items-per-block battery with five single-item measures per pop-up, traded for
+completion at N = 40 on phones. Everything else — design, storefront, pop-up, event logging, data
+layer — is unaffected. If you're reading `PRD_confirmshaming_experiment_app.md` too, its §4 and §5
+are superseded; the rest of it still stands.
+
 | | |
 | --- | --- |
 | Target N | 40 (13 / 13 / 14 per arm) |
-| CSV columns | 145 (one row per person) |
-| Rated items | 72 (36 × two blocks) |
-| Checks green | 91 (23 unit · 26 API round-trip · 42 end-to-end) |
+| CSV columns | 100 (one row per person) |
+| Rated items | 8 (4 × two blocks), plus a downstream choice, awareness and a comparative block |
+| Checks green | 121 (40 unit · 26 API round-trip · 55 end-to-end) |
 | Bundle | 69 kB gzipped, no CDN calls |
 
 ---
@@ -50,13 +56,14 @@ survey.
 
 | Area | State | Notes |
 | --- | --- | --- |
-| State machine & full participant flow | ✅ done | Consent → 2 shopping blocks → questionnaire → debrief |
+| State machine & full participant flow | ✅ done | Consent → 2 shopping blocks → awareness → comparative → debrief |
 | Apps Script + Sheet round-trip | ✅ done | Proven against a local mock of the real `Code.gs` |
 | Storefront, product page, pop-up | ✅ done | Inline SVG products, no network images |
-| Questionnaire engine | ✅ done | JSON-driven, forced order, randomised within screen |
-| Recognition, open-ended, covariates | ✅ done | |
+| Questionnaire engine (v2) | ✅ done | One screen per block: 4 rated items, fixed order, + downstream choice + optional open-ended |
+| Awareness check (screen 10) | ✅ done | Asked once per brand, after both blocks, never quotes a literal decline wording |
+| Comparative block (screen 11) | ✅ done | Raw + recoded relative to the experimental brand |
 | Admin view + CSV export | ✅ done | `?admin=1&key=…`, live cell counts |
-| Codebook + R analysis starter | ✅ done | Both generated from the item bank |
+| Codebook + R analysis starter | ✅ done | Both generated from the item bank / awareness / comparative modules |
 | **Apps Script deployed to Google** | 🟠 open | **The one unverified link.** See "What's actually open." |
 | Real-phone QA on mobile data | 🟠 open | Tested in a Pixel 5 emulation only |
 | Two pilot runs | 🟠 open | PRD's definition of done |
@@ -86,7 +93,7 @@ npm run roundtrip
 random and submission fails gracefully into the rescue screen.
 ```bash
 npm run dev        # http://localhost:5173
-npm test           # 23 unit tests
+npm test           # 40 unit tests
 npm run e2e        # full participant in a real browser
 ```
 
@@ -103,24 +110,25 @@ Rscript analysis_starter.R analysis/synthetic_sample.csv
 ```
 
 Full deployment walkthrough — Google Sheet, Apps Script, Vercel, recruiter links — is in
-`README.md`. Every column, scale and reverse-coding flag is in `codebook.md`.
+`README.md`. Every column, scale and recoding rule is in `codebook.md`.
 
 ---
 
-## The five ideas holding it together
+## The six ideas holding it together
 
 If you understand these, the rest of the codebase follows. Each one exists because a specific
 thing could otherwise go wrong silently.
 
-### 1. One item bank, everything else generated
+### 1. Three small data files, everything else generated
 
-Every questionnaire item lives in `src/data/items.ts` exactly once, with its scale, anchors,
-factor and `reverse` flag. The codebook, the 145 CSV columns, the Sheet header inside `Code.gs`
-and the reverse-coding vector the R script uses are **all generated from it**. A reverse flag
-cannot drift between the instrument that ran and the analysis that scores it — the drift is
+The instrument lives in three files: `src/data/items.ts` (the four rated items and the downstream
+choice), `src/data/awareness.ts` (the awareness check), and `src/data/comparative.ts` (the
+comparative block, including the brand-relative recoding functions). The codebook, the 100 CSV
+columns, and the Sheet header inside `Code.gs` are **all generated from these three**. A recoding
+rule cannot drift between the instrument that ran and the analysis that scores it — the drift is
 structurally impossible, not merely unlikely.
 
-> Edit `items.ts` → `npm run gen` → re-paste `Code.gs`
+> Edit any of the three → `npm run gen` → re-paste `Code.gs`
 
 ### 2. The condition is one string, and nothing else can become one
 
@@ -154,24 +162,41 @@ from anyone who dropped at block two.
 
 `session.step` is the only source of truth for what's on screen, and no component computes its
 own successor. That's what makes the forced questionnaire order a structural property rather
-than a convention — to ask emotions after a manipulation item you'd have to edit the table, not
+than a convention — to ask a feeling item after the manipulation item, or to reach the awareness
+check right after a single pop-up instead of after both blocks, you'd have to edit the table, not
 merely make a mistake in a component.
 
 > `src/machine/steps.ts`
+
+### 6. Comparative answers are recoded relative to CONDITION, not POSITION
+
+Roughly half of participants saw the neutral pop-up on the first brand they visited, half on the
+second. The comparative block (screen 11) asks about "Brand 1" / "Brand 2" — presentation
+position — but every raw answer is recoded relative to whichever brand carried the experimental
+pop-up before it means anything about the manipulation. Get this backwards and every comparative
+result is silently wrong for whichever half of the sample had the opposite position/condition
+pairing. `src/data/comparative.test.ts` feeds the same raw answer under both `order` values and
+asserts the recoded meaning stays fixed to condition while its relationship to position flips.
+
+> `src/data/comparative.ts` · `src/net/serialize.ts` (where the recode is actually applied)
 
 ---
 
 ## The tests are the spec
 
-Four requirements are experimental-validity constraints, not preferences. Each is enforced by a
-test, so breaking one fails the build rather than quietly corrupting the study.
+These are experimental-validity constraints, not preferences. Each is enforced by a test, so
+breaking one fails the build rather than quietly corrupting the study. The last three are the
+three things `Instrument_v2.md` itself calls out as "easy to get wrong."
 
 | Requirement | Enforced by |
 | --- | --- |
 | The decline wording is the *only* difference between conditions | `Popup.identical.test.tsx` |
-| Emotions measured before any manipulation/intent item; no back navigation | `machine/steps.test.ts` |
+| Guilt/irritation measured before the manipulation item; no back navigation | `machine/steps.test.ts` |
 | Every event stamped from one clock | `instrumentation/clock.test.ts` |
 | No progress bar or study cue during the shopping steps | `machine/steps.test.ts` |
+| Awareness asked once per brand, only after both blocks; never quotes a literal decline wording | `machine/steps.test.ts` |
+| Brand-trust item is level-framed, not change-framed | `machine/steps.test.ts` |
+| Comparative recoding is relative to condition, not presentation position | `data/comparative.test.ts` |
 
 **If one of these fails, do not update it to pass.** It's telling you the manipulation has been
 confounded, and there is no statistical fix for that after collection. The identical-pop-up test
@@ -215,18 +240,20 @@ accident of randomisation.
 
 ## Decisions already argued out
 
-These deviate from the PRD deliberately. Each is listed with its reasoning in `codebook.md` §9
-so the write-up can state it rather than discover it. Please don't quietly revert them.
+These deviate from the PRD (or from v1 of the instrument) deliberately. Each is listed with its
+reasoning in `codebook.md` §11 so the write-up can state it rather than discover it. Please don't
+quietly revert them.
 
-| PRD said | Built as | Because |
+| PRD / v1 said | Built as | Because |
 | --- | --- | --- |
+| 72 rated items across 9 multi-item scales | 8 rated items + downstream choice + comparative block | `Instrument_v2.md`: reliability traded for completion at N=40 on phones |
+| Cronbach's alpha per scale | None | No multi-item scale exists in v2 to compute alpha over |
 | `mode:'no-cors'` POST | CORS-simple `text/plain` POST | An opaque response resolves successfully even on a 500, so the retry-and-rescue logic the PRD also asks for could never have fired |
 | `*_abandoned` per block | Session-level, plus `abandoned_at_step` | People abandon a session, not a pop-up |
 | `cancelled_taps` includes `pointercancel` | Two separate columns | On Android `pointercancel` fires on every scroll; merged, the column would mostly measure scrolling |
 | Continuation "6s or until action" | Live at 0s, auto-advance at 8s, censoring flagged | Ambiguous between a floor and a ceiling, which give different dwell distributions |
 | `abandon` code, no threshold | `timeout` at 45s | Without a timeout a frozen participant loses the entire row |
-| IMI item 6 unmarked | `reverse: true` | "Fair" at the high anchor runs opposite to the scale; unreversed it deflates alpha and biases the mean |
-| ~6 minutes | Consent states 8–10 | 72 rated items plus storefront and end matter doesn't fit in 6 on a phone |
+| ~6 minutes (v1: stated 8–10 due to item load) | Consent states ~6 minutes again | v2's much shorter instrument (~23 items vs ~80) makes the original estimate realistic |
 
 ---
 
@@ -258,9 +285,13 @@ Things that will bite you, in rough order of how much damage they'd do.
 - **Press-dwell will be a noisy near-constant on touch.** There's no hover, and tap duration is
   reflex rather than deliberation. `latency_ms` and `time_to_first_touch_ms` are the variables
   that carry the argument. Worth a line in the limitations slide.
-- **If piloting runs long,** set `CUT_TIER` in `src/data/config.ts` and re-run `npm run gen`.
-  Every item carries a cut tier following the PRD's order — credibility first, then the
-  happy/amused factor, then switching intention. IMI and the anger factor are never cut.
+- **There's no cut-tier system in v2** — that was a v1 mechanism for a 72-item instrument. If
+  piloting still runs long, cut a question directly in `items.ts` / `comparative.ts` and
+  regenerate; there isn't enough left to justify a tiered system.
+- **The comparative block is corroborating evidence, not primary evidence.** Asking participants
+  to compare the two pop-ups directly makes the manipulation salient. If it ever contradicts the
+  within-person behavioural results, believe the behavioural data — say this explicitly if you
+  present both.
 
 ---
 
@@ -272,7 +303,7 @@ Good places to pick up, roughly in the order they block progress.
 > against a faithful local sandbox running the real `Code.gs`, but *not* against Google's actual
 > servers. The `text/plain` CORS-simple POST is a well-established Apps Script pattern, but it
 > hasn't been confirmed on a live deployment. Follow the README, then open
-> `<EXEC_URL>?action=ping` — it should return `{"ok":true,"columns":145,"slots":52}`. If it
+> `<EXEC_URL>?action=ping` — it should return `{"ok":true,"columns":100,"slots":52}`. If it
 > doesn't, `?action=verify&pid=` is already wired as a fallback path.
 
 - **Real-device QA.** One full run on an actual Android phone on mobile data, not desktop, not
@@ -281,8 +312,8 @@ Good places to pick up, roughly in the order they block progress.
 - **Two pilot runs** with people outside the group. The PRD's definition of done: they finish
   without asking a single question, both rows land with non-null timing, and the CSV opens
   cleanly.
-- **Decide the cut tier** from what the pilots actually take, and lower `STATED_DURATION` in
-  `src/data/copy.ts` to match.
+- **Confirm the stated duration** (`STATED_DURATION` in `src/data/copy.ts`, currently "about 6
+  minutes") against what the pilots actually take, and adjust if it drifts.
 - **Two unresolved study-design calls.** The brand names aren't matched — "Aurevella" vs "Maison
   Veloure" differ in length, syllables and how luxury-coded they read. Counterbalancing removes
   the bias but not the variance, and that variance lands on the primary outcome. And the category
@@ -298,37 +329,40 @@ Good places to pick up, roughly in the order they block progress.
 
 ```
 PRD_confirmshaming_experiment_app.md   the original spec
+Instrument_v2.md                       replaces PRD §4-5 — the shortened questionnaire
 README.md                              deployment, debug mode, recruiter links, checklist
-codebook.md                            GENERATED — every column, scale, reverse flag, deviation
-analysis_starter.R                     scoring, alphas, difference scores, effect sizes
+codebook.md                            GENERATED — every column, scale, recoding rule, deviation
+analysis_starter.R                     recoding verification, difference scores, effect sizes
 apps-script/Code.gs                    GENERATED — paste this into the Apps Script editor
 
 src/data/
-  items.ts                             ← THE ITEM BANK. Start here.
-  columns.ts                           the 145-column CSV contract
+  items.ts                             ← THE RATED ITEMS + downstream choice. Start here.
+  awareness.ts                         the awareness check (screen 10)
+  comparative.ts                       the comparative block + brand-relative recoding (screen 11)
+  columns.ts                           the 100-column CSV contract
   conditions.ts                        the four wordings, and nothing else per-condition
   sequence.ts                          GENERATED — the balanced 52-slot assignment sequence
   brands.ts copy.ts config.ts
 
 src/machine/                           steps, reducer, persistence, session provider
 src/instrumentation/                   clock.ts (the only timer) · popupTelemetry.ts
-src/net/                               api.ts transport · serialize.ts row builder
+src/net/                               api.ts transport · serialize.ts row builder (recoding happens here)
 src/screens/                           one component per step
 
 scripts/
   gen-*.ts                             the generators behind npm run gen
   mock-apps-script.mjs                 runs the real Code.gs locally under stubs
   roundtrip-test.ts                    26 assertions on the data layer
-  e2e-smoke.mjs                        42 assertions, real browser, real row
+  e2e-smoke.mjs                        55 assertions, real browser, real row
   make-synthetic-csv.ts                the dry-run dataset
 
 analysis/
-  generated_scales.R                   GENERATED — scale defs + reverse vector for R
+  generated_scales.R                   GENERATED — rated-item text + ordinal mapping for R
   synthetic_sample.csv                 GENERATED — 40 simulated participants
 ```
 
 ---
 
-Four commits on `claude/brave-heisenberg-m8zf3f`. Roughly 6,100 lines of TypeScript across the
+Five commits on `claude/brave-heisenberg-m8zf3f`. Roughly 6,500 lines of TypeScript across the
 app, generators and test harnesses. Read `README.md` for deployment and `codebook.md` before
 touching the instrument.

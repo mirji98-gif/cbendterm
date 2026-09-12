@@ -19,8 +19,8 @@ import { ProductPage } from './screens/ProductPage';
 import { Popup } from './screens/Popup';
 import { Continuation } from './screens/Continuation';
 import { QuestionnaireBlock } from './screens/QuestionnaireBlock';
-import { Recognition } from './screens/Recognition';
-import { OpenEnded } from './screens/OpenEnded';
+import { Awareness } from './screens/Awareness';
+import { Comparative } from './screens/Comparative';
 import { Covariates, Demographics } from './screens/EndQuestions';
 import { Submitting, Debrief, Rescue } from './screens/Finish';
 import { Admin } from './screens/Admin';
@@ -65,10 +65,10 @@ function CurrentScreen(): JSX.Element {
     case 'block_2':
       return <QuestionnaireBlock blockKey={blockKey!} />;
 
-    case 'recognition':
-      return <Recognition />;
-    case 'open_ended':
-      return <OpenEnded />;
+    case 'awareness':
+      return <Awareness />;
+    case 'comparative':
+      return <Comparative />;
     case 'covariates':
       return <Covariates />;
     case 'demographics':

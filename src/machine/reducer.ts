@@ -7,15 +7,14 @@
  * timing column ever looks wrong, the truth is reconstructible from it.
  */
 import { DECLINE_COPY, type Choice } from '../data/conditions';
-import { BLOCK_ITEMS, SECTION_ORDER, type SectionId } from '../data/items';
-import { CUT_TIER } from '../data/config';
+import { RATED_ITEMS, type DownstreamChoice, type RatedItemId } from '../data/items';
 import type {
   Assignment, BlockData, BlockKey, EndMatter, LoggedEvent, Session, Step,
 } from './types';
 import { blockAtPosition, brandForBlock } from './types';
 import { nextStep, isTimingCritical } from './steps';
 
-export const SCHEMA_VERSION = 1;
+export const SCHEMA_VERSION = 2;
 
 export type Action =
   | { type: 'log'; event: LoggedEvent }
@@ -30,9 +29,9 @@ export type Action =
   | { type: 'popup_telemetry'; block: BlockKey; patch: Partial<BlockData>; event?: LoggedEvent }
   | { type: 'popup_resolved'; block: BlockKey; choice: Choice; latencyMs: number | null; event: LoggedEvent }
   | { type: 'continuation_done'; block: BlockKey; dwellMs: number; autoAdvanced: boolean; event: LoggedEvent }
-  | { type: 'item_order'; block: BlockKey; section: SectionId; ids: string[]; event?: LoggedEvent }
-  | { type: 'answer'; block: BlockKey; itemId: string; value: number; event: LoggedEvent }
-  | { type: 'section_next'; event: LoggedEvent }
+  | { type: 'rate'; block: BlockKey; itemId: RatedItemId; value: number; event: LoggedEvent }
+  | { type: 'downstream_choice'; block: BlockKey; value: DownstreamChoice; event: LoggedEvent }
+  | { type: 'block_open_ended'; block: BlockKey; value: string }
   | { type: 'end_matter'; patch: Partial<EndMatter>; event: LoggedEvent }
   | { type: 'submit_started'; submittedAtIso: string; event: LoggedEvent }
   | { type: 'submit_failed'; error: string; event: LoggedEvent }
@@ -48,8 +47,8 @@ function withEvent(session: Session, event: LoggedEvent | undefined): Session {
 export function buildBlocks(assignment: Assignment): Record<BlockKey, BlockData> {
   const make = (key: BlockKey): BlockData => {
     const condition = key === 'neutral' ? ('neutral' as const) : assignment.arm;
-    const responses: Record<string, number | null> = {};
-    for (const item of BLOCK_ITEMS) responses[item.id] = null;
+    const ratings = {} as Record<RatedItemId, number | null>;
+    for (const item of RATED_ITEMS) ratings[item.id] = null;
     return {
       key,
       condition,
@@ -70,8 +69,9 @@ export function buildBlocks(assignment: Assignment): Record<BlockKey, BlockData>
       productViewed: null,
       timeOnStoreMs: null,
       timingInvalidated: false,
-      responses,
-      itemOrder: {},
+      ratings,
+      downstreamChoice: null,
+      openEnded: '',
     };
   };
   return { neutral: make('neutral'), exp: make('exp') };
@@ -90,7 +90,7 @@ function patchBlock(
 }
 
 function goto(session: Session, step: Step): Session {
-  return { ...session, step, sectionIndex: 0, lastStepReached: step };
+  return { ...session, step, lastStepReached: step };
 }
 
 export function reducer(session: Session, action: Action): Session {
@@ -173,34 +173,22 @@ export function reducer(session: Session, action: Action): Session {
       return next ? goto(done, next) : done;
     }
 
-    case 'item_order': {
+    case 'rate': {
       if (!s.blocks) return s;
       const block = s.blocks[action.block];
       return patchBlock(s, action.block, {
-        itemOrder: { ...block.itemOrder, [action.section]: action.ids },
+        ratings: { ...block.ratings, [action.itemId]: action.value },
       });
     }
 
-    case 'answer': {
-      if (!s.blocks) return s;
-      const block = s.blocks[action.block];
-      return patchBlock(s, action.block, {
-        responses: { ...block.responses, [action.itemId]: action.value },
-      });
-    }
+    case 'downstream_choice':
+      return patchBlock(s, action.block, { downstreamChoice: action.value });
 
-    case 'section_next': {
-      const last = SECTION_ORDER.length - 1;
-      if (s.sectionIndex < last) {
-        return { ...s, sectionIndex: s.sectionIndex + 1 };
-      }
-      const next = nextStep(s.step);
-      return next ? goto(s, next) : s;
-    }
+    case 'block_open_ended':
+      return patchBlock(s, action.block, { openEnded: action.value });
 
     case 'end_matter': {
-      const withPatch = { ...s, endMatter: { ...s.endMatter, ...action.patch } };
-      return withPatch;
+      return { ...s, endMatter: { ...s.endMatter, ...action.patch } };
     }
 
     case 'submit_started':
@@ -251,10 +239,14 @@ export function reducer(session: Session, action: Action): Session {
 
 export function emptyEndMatter(): EndMatter {
   return {
-    recognitionNeutral: null,
-    recognitionExp: null,
-    openEnded: '',
-    openEndedSkipped: false,
+    awareBrand1Raw: null,
+    awareBrand2Raw: null,
+    c1Raw: null,
+    c2Raw: null,
+    c3Raw: null,
+    c4Raw: null,
+    c5Raw: null,
+    c6Open: '',
     popupFreq: null,
     dpAwareness: null,
     shoppingFreq: null,
@@ -279,11 +271,9 @@ export function initialSession(opts: {
   return {
     schema: SCHEMA_VERSION,
     step: 'consent',
-    sectionIndex: 0,
     participantId: opts.participantId,
     recruiterId: opts.recruiterId,
     isDebug: opts.isDebug,
-    cutTier: CUT_TIER,
     assignment: null,
     blocks: null,
     endMatter: emptyEndMatter(),

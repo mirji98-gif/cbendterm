@@ -11,14 +11,14 @@
 /**
  * Stated duration on the consent screen.
  *
- * The PRD budgets ~6 minutes. The full instrument is 36 rated items per block
- * (72 total) plus the storefront, recognition, open-ended and 6 end items,
- * which on a phone realistically runs 9-11 minutes. Telling participants "6
- * minutes" and then taking 10 is both an ethics problem and a drop-out
- * problem, so the honest figure is stated here. If you raise CUT_TIER after
- * piloting, lower this to match what you actually measure.
+ * Instrument v2 cuts the rated-item load from 72 (v1) to 8 (4 rated items ×
+ * 2 blocks) plus one downstream-choice question per block, two awareness
+ * questions, five comparative questions, three covariates and three
+ * demographics — call it ~23 items total, versus v1's ~80. Combined with the
+ * storefront and pop-ups, the PRD's original 6-minute estimate is realistic
+ * again. Confirm against actual pilot times and adjust if it drifts.
  */
-export const STATED_DURATION = 'about 8–10 minutes';
+export const STATED_DURATION = 'about 6 minutes';
 
 export const CONSENT = {
   title: 'Before you start',
@@ -106,21 +106,9 @@ export const DEBRIEF = {
   close: 'You can close this tab now. Thank you for your time.',
 };
 
-export const RECOGNITION = {
-  title: 'One last thing about those two stores',
-  // Asked retrospectively at the end (PRD §4): an immediate check after the
-  // first pop-up would prime the participant for the second and destroy the
-  // "Ignore" classification for that brand.
-  // Worded to apply whether or not the participant took the offer: a stem that
-  // presumes declining would confuse everyone who accepted, and their
-  // recognition data matters just as much.
-  stem: 'Each store showed you a discount pop-up with two options. One of them was "Yes, apply 15% off". What did the OTHER option say?',
-  dontRemember: 'I don’t remember',
-};
-
-export const OPEN_ENDED = {
-  title: 'In your own words',
-  stem: 'Why did you respond to each pop-up the way you did?',
-  placeholder: 'A sentence or two is plenty.',
-  skip: 'Skip this',
-};
+/**
+ * v2 replaces the v1 recognition check with an awareness check (see
+ * src/data/awareness.ts and src/screens/Awareness.tsx). The stem and options
+ * live there, since they interpolate the real brand name and must be built
+ * per participant (option order is shuffled).
+ */

@@ -2,7 +2,6 @@
  * Runtime configuration. Everything a non-developer might need to change
  * during fieldwork lives here.
  */
-import type { CutTier } from './items';
 
 /**
  * Apps Script Web App /exec URL. Paste the deployment URL here (or set
@@ -13,14 +12,12 @@ export const ENDPOINT_URL: string =
   (import.meta.env?.VITE_ENDPOINT_URL as string | undefined) ?? '';
 
 /**
- * Burden cut tier (PRD §5.3). 0 = full instrument. Raise ONLY after piloting
- * shows the session running over 7 minutes, and raise one step at a time:
- *   1 → drop credibility from the first block only
- *   2 → additionally drop the happy/amused emotion factor
- *   3 → additionally drop switching intention
- * Re-run `npm run gen` after changing this so codebook.md matches.
+ * Instrument v2 (Instrument_v2.md) has no burden cut tier — the whole point of
+ * v2 was cutting the instrument down to five single-item measures per pop-up,
+ * so there is nothing left to trim. If v2 still runs long in piloting, cut a
+ * question by editing src/data/items.ts / comparative.ts directly and running
+ * `npm run gen`, rather than reintroducing a tiered system for ~20 items.
  */
-export const CUT_TIER: CutTier = 0;
 
 export const TIMING = {
   /**
@@ -43,9 +40,6 @@ export const TIMING = {
   rageTapRadiusPx: 48,
   /** Sessions with a render gap above this are excluded at analysis (PRD §11). */
   popupRenderGapExclusionMs: 2_000,
-  /** Open-ended probe becomes skippable after this long. */
-  openEndedSkipAfterMs: 10_000,
-  openEndedMinChars: 15,
 } as const;
 
 /** Submit retry policy (PRD §7 "Resilience"). */

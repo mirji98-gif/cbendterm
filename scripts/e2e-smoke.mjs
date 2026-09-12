@@ -55,14 +55,24 @@ function check(label, cond, detail = '') {
   else { failures++; console.log(`  \x1b[31m✗\x1b[0m ${label}${detail ? `\n      ${detail}` : ''}`); }
 }
 
-/** Answers every visible 7-point row, then continues. */
+/**
+ * Answers every visible radiogroup, then continues.
+ *
+ * Deliberately excludes the LAST option in each group: both single-select
+ * lists that can produce a legitimate NA recode ('not_sure' in the downstream
+ * choice, 'dont_remember' in C1) always place that sentinel last. Avoiding it
+ * keeps this happy-path run deterministic about which columns should be
+ * populated, without weakening any other assertion — every other radiogroup
+ * (rated items, awareness, C2-C5) is fine no matter which option lands.
+ */
 async function answerGrid(page) {
   const groups = page.locator('[role="radiogroup"]');
   const n = await groups.count();
   for (let i = 0; i < n; i++) {
     const options = groups.nth(i).locator('[role="radio"]');
     const count = await options.count();
-    await options.nth(Math.floor(Math.random() * count)).click();
+    const pickableCount = count > 1 ? count - 1 : count;
+    await options.nth(Math.floor(Math.random() * pickableCount)).click();
   }
   const cont = page.getByRole('button', { name: /continue|finish/i });
   await cont.waitFor({ state: 'visible' });
@@ -132,23 +142,48 @@ async function main() {
       await page.getByRole('button', { name: /^Continue$/ }).click();
 
       console.log(`   questionnaire block ${block}`);
-      for (let section = 0; section < 5; section++) {
-        await page.locator('[role="radiogroup"]').first().waitFor();
-        if (section === 0) {
-          check('progress bar appears once the questionnaire starts',
-            (await page.locator('div.h-1.bg-neutral-200').count()) > 0);
-        }
-        await answerGrid(page);
+      // v2: one screen per block — 4 rated items + 1 downstream choice (5
+      // radiogroups total) + an optional textarea, one Continue.
+      await page.locator('[role="radiogroup"]').first().waitFor();
+      check(`block ${block} has 5 radiogroups (4 rated + downstream choice)`,
+        (await page.locator('[role="radiogroup"]').count()) === 5);
+      if (block === 1) {
+        check('progress bar appears once the questionnaire starts',
+          (await page.locator('div.h-1.bg-neutral-200').count()) > 0);
+        // Prove the optional open-ended field round-trips when filled.
+        await page.locator('textarea').fill('Felt a bit much, but I get why.');
       }
+      await answerGrid(page);
     }
 
-    console.log('\n4. End matter');
+    console.log('\n4. Awareness (screen 10)');
     await page.locator('[role="radiogroup"]').first().waitFor();
-    await answerGrid(page); // recognition
+    check('awareness has exactly 2 radiogroups (one per brand)',
+      (await page.locator('[role="radiogroup"]').count()) === 2);
+    const awarenessText = await page.locator('body').innerText();
+    // The FULL literal decline strings, exactly as conditions.ts defines them
+    // — a paraphrase sharing a stray word ("decide later" appears in both the
+    // literal autonomy wording and its non-literal description) is fine; only
+    // a verbatim quote of the actual button text is the failure this guards.
+    const LITERAL_DECLINE_STRINGS = [
+      'No thanks, I’ll pay full price',
+      'No thanks, I don’t need to save money',
+      'Not now — I’ll decide later',
+      'No thanks', // the neutral condition's own full wording
+    ];
+    check(
+      'awareness screen never quotes a literal decline wording verbatim',
+      LITERAL_DECLINE_STRINGS.every((s) => !awarenessText.includes(s)),
+      LITERAL_DECLINE_STRINGS.filter((s) => awarenessText.includes(s)).join(' | '),
+    );
+    await answerGrid(page);
 
-    await page.locator('textarea').waitFor();
-    await page.locator('textarea').fill('The second one felt pushy, so I closed it, honestly.');
-    await page.getByRole('button', { name: /^Continue$/ }).click();
+    console.log('\n5. Comparative block (screen 11)');
+    await page.locator('[role="radiogroup"]').first().waitFor();
+    check('comparative has 5 radiogroups (C1,C2,C3,C4,C5)',
+      (await page.locator('[role="radiogroup"]').count()) === 5);
+    // Leave C6 blank, proving the optional field is truly skippable.
+    await answerGrid(page);
 
     await page.locator('[role="radiogroup"]').first().waitFor();
     await answerGrid(page); // covariates
@@ -213,8 +248,20 @@ async function main() {
     check('block 1 was resolved by the decline button', get(`${get('order') === 'neutral_first' ? 'neutral' : 'exp'}_choice`) === 'decline_button');
     check('block 2 was resolved by the close X', get(`${get('order') === 'neutral_first' ? 'exp' : 'neutral'}_choice`) === 'close_x');
 
-    const blanks = header.filter((h) => /_(guilt|anger|happy|imi|attrib|cred|trust|att_)\w*$/.test(h) && !get(h));
-    check('every questionnaire item has an answer', blanks.length === 0, `blank: ${blanks.slice(0, 5).join(', ')}`);
+    const blanks = header.filter((h) => /_(b1_guilt|b2_irritation|b3_manipulation|b4_trust|b5_raw)$/.test(h) && !get(h));
+    check('every rated item and downstream choice has an answer', blanks.length === 0, `blank: ${blanks.slice(0, 5).join(', ')}`);
+
+    check('one block\'s optional open-ended was filled', get('neutral_b6_open').length > 0 || get('exp_b6_open').length > 0);
+    check('difference scores are present for every rated item',
+      ['diff_b1_guilt', 'diff_b2_irritation', 'diff_b3_manipulation', 'diff_b4_trust', 'diff_b5']
+        .every((c) => get(c) !== '' && get(c) !== undefined));
+
+    check('awareness answered for both brands', get('aware_brand1_raw').length > 0 && get('aware_brand2_raw').length > 0);
+    check('awareness correctness recorded by condition', get('aware_neutral_correct').length > 0 && get('aware_exp_correct').length > 0);
+
+    check('comparative raw answers present', ['c1_raw', 'c2_raw', 'c3_raw', 'c4_raw', 'c5_raw'].every((c) => get(c) !== ''));
+    check('comparative recoded columns present', ['c1_exp_more_manipulative', 'c2_trust_exp_more', 'c3_recoded', 'c4_choose_exp', 'c5_recoded'].every((c) => get(c) !== ''));
+    check('comparative c6_open left blank (optional field truly skippable)', get('c6_open') === '');
 
     const log = JSON.parse(get('event_log_json'));
     check('event log captured the session', log.length > 20, `${log.length} events`);

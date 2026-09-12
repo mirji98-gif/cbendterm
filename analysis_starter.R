@@ -1,15 +1,21 @@
 # ═══════════════════════════════════════════════════════════════════════════
-#  Confirmshaming Storefront Study — analysis starter
+#  Confirmshaming Storefront Study — analysis starter (Instrument v2)
 #
-#  Reads the exported CSV, reverse-codes, builds scale scores with Cronbach's
-#  alpha, computes within-person (experimental − neutral) difference scores,
-#  and compares the three arms with effect sizes.
+#  Reads the exported CSV, verifies the app's own recoding, computes
+#  within-person (experimental − neutral) difference scores for the four
+#  rated items and the downstream choice, reports awareness and comparative
+#  results, and compares the three arms with effect sizes.
 #
 #  BASE R ONLY. No packages to install, nothing to configure beyond the path
 #  below. Run:   Rscript analysis_starter.R  [path/to/export.csv]
 #
-#  Scale definitions and reverse-coding come from analysis/generated_scales.R,
-#  which is generated from the item bank the app actually administered. Do not
+#  Instrument v2 (Instrument_v2.md) replaced the v1 multi-item battery with
+#  five single-item measures per pop-up. There is therefore no Cronbach's
+#  alpha section here — there is no multi-item scale left to compute it over.
+#  See codebook.md §1 for what was kept and what was traded away.
+#
+#  Column definitions come from analysis/generated_scales.R, which is
+#  generated from the item bank the app actually administered. Do not
 #  hand-edit that file — change src/data/items.ts and run `npm run gen`.
 # ═══════════════════════════════════════════════════════════════════════════
 
@@ -18,7 +24,7 @@ CSV_PATH <- if (length(args) >= 1) args[1] else "analysis/synthetic_sample.csv"
 
 source("analysis/generated_scales.R")
 
-cat("\n══ Confirmshaming Storefront Study ══\n")
+cat("\n══ Confirmshaming Storefront Study — Instrument v2 ══\n")
 cat("Reading:", CSV_PATH, "\n")
 if (!file.exists(CSV_PATH)) stop("CSV not found. Pass the path as an argument.")
 
@@ -26,12 +32,13 @@ raw <- read.csv(CSV_PATH, stringsAsFactors = FALSE, check.names = FALSE,
                 na.strings = c("", "NA"))
 cat("Rows in file:", nrow(raw), "\n\n")
 
+is_true <- function(x) !is.na(x) & toupper(as.character(x)) == "TRUE"
+num <- function(x) suppressWarnings(as.numeric(x))
+
 # ─────────────────────────────────────────────────────────────────────────────
-# 1. Exclusions (see codebook §8). Each is reported, never silent.
+# 1. Exclusions (see codebook §10). Each is reported, never silent.
 # ─────────────────────────────────────────────────────────────────────────────
 cat("── Exclusions ──────────────────────────────────────────\n")
-
-is_true <- function(x) !is.na(x) & toupper(as.character(x)) == "TRUE"
 
 n0 <- nrow(raw)
 d <- raw[!is_true(raw$is_debug), ]
@@ -57,7 +64,7 @@ if (n_fallback > 0) {
 # Render-gap exclusion is applied PER BLOCK, not per participant: a slow paint
 # on one pop-up does not invalidate the other block's self-report.
 for (p in BLOCK_PREFIXES) {
-  gap <- suppressWarnings(as.numeric(d[[paste0(p, "_popup_render_gap_ms")]]))
+  gap <- num(d[[paste0(p, "_popup_render_gap_ms")]])
   bad <- !is.na(gap) & gap > RENDER_GAP_EXCLUSION_MS
   if (any(bad)) {
     cat(sprintf("  %s block latency voided (>%dms paint): %d\n",
@@ -86,84 +93,66 @@ if (any(shortfall > 0)) {
 cat("\n")
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 2. Reverse-coding
+# 2. Recoding verification
 # ─────────────────────────────────────────────────────────────────────────────
-# Reverse BEFORE scale scoring. The flags come from the generated file, so they
-# match the instrument that was administered — including imi_6, which the PRD
-# text leaves unmarked (see codebook §1).
-reverse_code <- function(df) {
-  n <- 0
-  for (p in BLOCK_PREFIXES) {
-    for (item in REVERSE_ITEMS) {
-      col <- paste0(p, "_", item)
-      if (col %in% names(df)) {
-        df[[col]] <- 8 - suppressWarnings(as.numeric(df[[col]]))
-        n <- n + 1
-      }
-    }
+# The app computes diff_bN and the comparative recoded columns at the moment
+# of submission, when it has the true assignment on hand — see
+# src/net/serialize.ts. This section RECOMPUTES the same values from the raw
+# columns and flags any mismatch, so a future bug in that file cannot pass
+# unnoticed. It does not overwrite anything; it only reports.
+cat("── Recoding verification (app's stored values vs recomputed) ──\n")
+
+verify_mismatch <- function(label, stored, recomputed) {
+  ok <- is.na(stored) & is.na(recomputed) | (!is.na(stored) & !is.na(recomputed) & stored == recomputed)
+  n_bad <- sum(!ok, na.rm = TRUE)
+  if (n_bad > 0) {
+    cat(sprintf("  ⚠ %s: %d row(s) disagree with the recomputed value — check serialize.ts\n", label, n_bad))
+  } else {
+    cat(sprintf("  %s: OK (%d rows checked)\n", label, sum(!is.na(stored) | !is.na(recomputed))))
   }
-  cat("── Reverse-coded", n, "columns:",
-      paste(REVERSE_ITEMS, collapse = ", "), "(both blocks)\n\n")
-  df
-}
-d <- reverse_code(d)
-
-# ─────────────────────────────────────────────────────────────────────────────
-# 3. Scale scores and Cronbach's alpha
-# ─────────────────────────────────────────────────────────────────────────────
-cronbach_alpha <- function(mat) {
-  mat <- mat[stats::complete.cases(mat), , drop = FALSE]
-  k <- ncol(mat)
-  if (k < 2 || nrow(mat) < 3) return(NA_real_)
-  total_var <- stats::var(rowSums(mat))
-  if (!is.finite(total_var) || total_var == 0) return(NA_real_)
-  item_var <- sum(apply(mat, 2, stats::var))
-  (k / (k - 1)) * (1 - item_var / total_var)
+  n_bad
 }
 
-cat("── Scale reliability (Cronbach's alpha) ────────────────\n")
-cat(sprintf("%-28s %8s %8s %6s\n", "Scale", "neutral", "exp", "items"))
-
-alphas <- list()
-for (scale in names(SCALES)) {
-  items <- SCALES[[scale]]
-  row <- c()
-  for (p in BLOCK_PREFIXES) {
-    cols <- paste0(p, "_", items)
-    cols <- cols[cols %in% names(d)]
-    mat <- suppressWarnings(sapply(d[cols], as.numeric))
-    a <- if (length(cols) >= 2) cronbach_alpha(as.matrix(mat)) else NA_real_
-    row[p] <- a
-    # Scale score: row mean, tolerating one missing item.
-    score <- rowMeans(mat, na.rm = TRUE)
-    score[rowSums(!is.na(mat)) < max(2, length(cols) - 1)] <- NA
-    d[[paste0(p, "_", scale)]] <- score
-  }
-  alphas[[scale]] <- row
-  flag <- if (!is.na(row["exp"]) && row["exp"] < 0.6) "  ← below .60" else ""
-  cat(sprintf("%-28s %8.2f %8.2f %6d%s\n",
-              SCALE_LABELS[[scale]], row["neutral"], row["exp"], length(items), flag))
+# diff_bN = exp − neutral, for each rated item.
+mismatches <- 0
+for (item in RATED_ITEMS) {
+  stored <- num(d[[paste0("diff_", item)]])
+  recomputed <- num(d[[paste0("exp_", item)]]) - num(d[[paste0("neutral_", item)]])
+  mismatches <- mismatches + verify_mismatch(paste0("diff_", item), stored, recomputed)
 }
 
-# Single-item outcomes are carried through unchanged, never averaged.
-for (p in BLOCK_PREFIXES) {
-  for (item in SINGLE_ITEMS) {
-    col <- paste0(p, "_", item)
-    if (col %in% names(d)) d[[col]] <- suppressWarnings(as.numeric(d[[col]]))
-  }
+# c3_recoded / c5_recoded: reverse (8 - raw) iff order == 'neutral_first'
+# (experimental brand is Brand 2 in that case).
+exp_is_brand2 <- d$order == "neutral_first"
+for (col in c("c3", "c5")) {
+  raw_col <- num(d[[paste0(col, "_raw")]])
+  recomputed <- ifelse(exp_is_brand2, 8 - raw_col, raw_col)
+  stored <- num(d[[paste0(col, "_recoded")]])
+  mismatches <- mismatches + verify_mismatch(paste0(col, "_recoded"), stored, recomputed)
 }
-cat("\nAlphas below .60 at N=40 are common with 3-item scales. Report them\n")
-cat("honestly rather than dropping items to chase a threshold.\n\n")
+
+# c1/c2/c4 recode raw == brand_experimental. brand_experimental is a display
+# NAME ("Aurevella") while c1_raw/c2_raw/c4_raw are brand IDs ("aurevella"),
+# so an exact automated check needs the name<->id map that only the app knows
+# — not worth hardcoding here and letting it drift. Spot-check a few rows by
+# eye instead: c1_exp_more_manipulative should be TRUE exactly when c1_raw
+# names the same brand as brand_experimental (case-insensitively).
+cat("  c1/c2/c4 recodes are brand-id comparisons — spot-check a few rows by eye:\n")
+print(utils::head(d[, c("brand_experimental", "c1_raw", "c1_exp_more_manipulative",
+                         "c4_raw", "c4_choose_exp")], 3))
+
+if (mismatches == 0) {
+  cat("\n  All numeric recodes verified.\n\n")
+} else {
+  cat(sprintf("\n  ⚠ %d total mismatches found above — investigate before trusting downstream numbers.\n\n", mismatches))
+}
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 4. Response-type coding, recomputed (codebook §7)
+# 3. Response-type coding, recomputed (codebook §9)
 # ─────────────────────────────────────────────────────────────────────────────
-# Recomputed here rather than trusted from the CSV, so the "Ignore" threshold
-# can be re-tuned without re-collecting data.
-recode_response <- function(choice, latency, recog_correct,
-                            threshold = IGNORE_LATENCY_MS) {
+recode_response <- function(choice, latency, aware_correct, threshold = IGNORE_LATENCY_MS) {
   out <- rep(NA_character_, length(choice))
-  fast_miss <- !is.na(latency) & latency < threshold & !is.na(recog_correct) & !recog_correct
+  fast_miss <- !is.na(latency) & latency < threshold & !is.na(aware_correct) & !aware_correct
   out[choice == "accept"] <- "comply"
   out[is.na(out) & fast_miss] <- "ignore"
   out[is.na(out) & choice == "decline_button"] <- "resist"
@@ -172,10 +161,9 @@ recode_response <- function(choice, latency, recog_correct,
 }
 
 for (p in BLOCK_PREFIXES) {
+  correct_col <- if (p == "neutral") "aware_neutral_correct" else "aware_exp_correct"
   d[[paste0(p, "_code")]] <- recode_response(
-    d[[paste0(p, "_choice")]],
-    suppressWarnings(as.numeric(d[[paste0(p, "_latency_ms")]])),
-    is_true(d[[paste0("recognition_correct_", p)]])
+    d[[paste0(p, "_choice")]], num(d[[paste0(p, "_latency_ms")]]), is_true(d[[correct_col]])
   )
 }
 
@@ -185,28 +173,24 @@ print(table(d$neutral_code))
 cat("\nExperimental pop-up, by arm:\n")
 print(table(d$arm, d$exp_code))
 
-cat("\nRecognition — got the experimental wording right:\n")
-print(round(tapply(is_true(d$recognition_correct_exp), d$arm, mean), 2))
+cat("\nAwareness — correctly identified the experimental wording, by arm:\n")
+print(round(tapply(is_true(d$aware_exp_correct), d$arm, mean), 2))
 cat("\n")
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 5. Within-person difference scores (experimental − neutral)
+# 4. Within-person difference scores (experimental − neutral)
 # ─────────────────────────────────────────────────────────────────────────────
-# THE PRIMARY OUTCOME (PRD §3). Differencing within participant removes every
-# stable individual difference — baseline grumpiness, scale-use style, how much
-# they like fragrance — which is worth a great deal at N=40.
-OUTCOMES <- c(names(SCALES), SINGLE_ITEMS)
-for (o in OUTCOMES) {
-  n_col <- paste0("neutral_", o); e_col <- paste0("exp_", o)
-  if (all(c(n_col, e_col) %in% names(d))) d[[paste0("diff_", o)]] <- d[[e_col]] - d[[n_col]]
-}
-d$diff_latency_ms <- suppressWarnings(as.numeric(d$exp_latency_ms)) -
-                     suppressWarnings(as.numeric(d$neutral_latency_ms))
-d$diff_cancelled_taps <- suppressWarnings(as.numeric(d$exp_cancelled_taps)) -
-                         suppressWarnings(as.numeric(d$neutral_cancelled_taps))
+# THE PRIMARY OUTCOME. Differencing within participant removes every stable
+# individual difference — baseline grumpiness, scale-use style, how much they
+# like fragrance — which is worth a great deal at N=40.
+for (item in RATED_ITEMS) d[[paste0("d_", item)]] <- num(d[[paste0("diff_", item)]])
+d$d_b5 <- num(d$diff_b5)
+
+OUTCOMES <- c(RATED_ITEMS, "b5")
+OUTCOME_LABELS <- c(RATED_ITEM_LABELS, b5 = "Downstream choice (ordinal: buy=3..avoid=0)")
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 6. Effect sizes
+# 5. Effect sizes
 # ─────────────────────────────────────────────────────────────────────────────
 # Hedges' g: Cohen's d with the small-sample correction. At n≈13 per arm the
 # correction is not cosmetic — it shrinks d by roughly 4-6%.
@@ -234,16 +218,16 @@ cohen_dz <- function(diffs) {
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 7. Within-person effect of the experimental pop-up, per arm
+# 6. Within-person effect of the experimental pop-up, per arm
 # ─────────────────────────────────────────────────────────────────────────────
 cat("── Within-person: experimental − neutral, by arm ───────\n")
 cat("   (paired t-test; dz uses the SD of the differences)\n\n")
-cat(sprintf("%-26s %-10s %7s %7s %7s %9s\n",
+cat(sprintf("%-46s %-10s %7s %7s %7s %9s\n",
             "Outcome", "Arm", "M diff", "SD", "dz", "p"))
 
 within_rows <- list()
 for (o in OUTCOMES) {
-  col <- paste0("diff_", o)
+  col <- paste0("d_", o)
   if (!col %in% names(d)) next
   printed_label <- FALSE
   for (arm in ARMS) {
@@ -252,21 +236,20 @@ for (o in OUTCOMES) {
     if (length(v) < 3) next
     tt <- tryCatch(t.test(v), error = function(e) NULL)
     dz <- cohen_dz(v)
-    cat(sprintf("%-26s %-10s %7.2f %7.2f %7.2f %9.3f\n",
-                if (printed_label) "" else SCALE_LABELS[[o]], arm,
+    cat(sprintf("%-46s %-10s %7.2f %7.2f %7.2f %9.3f\n",
+                if (printed_label) "" else OUTCOME_LABELS[[o]], arm,
                 mean(v), sd(v), dz, if (is.null(tt)) NA else tt$p.value))
     printed_label <- TRUE
     within_rows[[length(within_rows) + 1]] <-
       data.frame(outcome = o, arm = arm, n = length(v), mean_diff = mean(v),
-                 sd = sd(v), dz = dz,
-                 p = if (is.null(tt)) NA else tt$p.value)
+                 sd = sd(v), dz = dz, p = if (is.null(tt)) NA else tt$p.value)
   }
   cat("\n")
 }
 within_df <- do.call(rbind, within_rows)
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 8. Between-arm comparison on the difference scores
+# 7. Between-arm comparison on the difference scores
 # ─────────────────────────────────────────────────────────────────────────────
 cat("── Between arms, on the difference scores ──────────────\n")
 cat("   Primary evidence at N=40 is DIRECTION and EFFECT SIZE.\n")
@@ -274,12 +257,12 @@ cat("   p-values are support, not the headline (PRD §11).\n\n")
 
 between_rows <- list()
 for (o in OUTCOMES) {
-  col <- paste0("diff_", o)
+  col <- paste0("d_", o)
   if (!col %in% names(d)) next
   sub <- d[!is.na(d[[col]]), ]
   if (nrow(sub) < 6 || length(unique(sub$arm)) < 2) next
 
-  cat(sprintf("%s\n", SCALE_LABELS[[o]]))
+  cat(sprintf("%s\n", OUTCOME_LABELS[[o]]))
   means <- tapply(sub[[col]], sub$arm, mean)
   sds <- tapply(sub[[col]], sub$arm, sd)
   ns <- tapply(sub[[col]], sub$arm, length)
@@ -292,7 +275,6 @@ for (o in OUTCOMES) {
   if (!is.null(aov_fit)) {
     F_val <- aov_fit[["F value"]][1]; p_val <- aov_fit[["Pr(>F)"]][1]
     df1 <- aov_fit[["Df"]][1]; df2 <- aov_fit[["Df"]][2]
-    # eta-squared: between-group SS over total SS.
     eta2 <- aov_fit[["Sum Sq"]][1] / sum(aov_fit[["Sum Sq"]])
     cat(sprintf("   one-way ANOVA: F(%d,%d)=%.2f, p=%.3f, eta2=%.3f\n",
                 df1, df2, F_val, p_val, eta2))
@@ -319,18 +301,48 @@ for (o in OUTCOMES) {
 between_df <- do.call(rbind, between_rows)
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 9. The mediation claim, descriptively
+# 8. Downstream choice: raw cross-tab (colour, not headline)
 # ─────────────────────────────────────────────────────────────────────────────
-# Coulter & Pinto (1995): ANGER, not felt guilt, mediates the damage. At N=40 a
-# formal mediation model is not credible, so this reports the three
-# correlations the argument rests on and lets the write-up be honest about it.
-cat("── Anger as the mediator (descriptive only) ────────────\n")
-if (all(c("diff_anger", "diff_att_brand", "diff_imi") %in% names(d))) {
+cat("── Downstream choice (B5), raw — colour, not headline ──\n")
+cat("   (cells of 2-3 people at n=13/arm; report diff_b5 above as the number.)\n\n")
+cat("Neutral pop-up:\n"); print(table(d$neutral_b5_raw))
+cat("\nExperimental pop-up, by arm:\n"); print(table(d$arm, d$exp_b5_raw))
+cat("\n")
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 9. Comparative block — corroborating evidence, not primary
+# ─────────────────────────────────────────────────────────────────────────────
+cat("── Comparative block (corroborating evidence only) ─────\n")
+cat("   Asking participants to compare the two pop-ups directly makes the\n")
+cat("   manipulation salient and may invite a constructed difference. If this\n")
+cat("   section contradicts the within-person results above, BELIEVE THE\n")
+cat("   BEHAVIOURAL DATA, not this section.\n\n")
+
+cat("C1 — brand felt more manipulative (recoded: experimental brand?), by arm:\n")
+print(round(tapply(is_true(d$c1_exp_more_manipulative), d$arm, mean, na.rm = TRUE), 2))
+cat("\nC2 — trust the experimental brand more, by arm:\n")
+print(round(tapply(is_true(d$c2_trust_exp_more), d$arm, mean, na.rm = TRUE), 2))
+cat("\nC3 — trust in experimental brand relative to neutral (1-7, recoded), by arm:\n")
+print(round(tapply(num(d$c3_recoded), d$arm, mean, na.rm = TRUE), 2))
+cat("\nC4 — chose the experimental brand for next purchase, by arm:\n")
+print(round(tapply(is_true(d$c4_choose_exp), d$arm, mean, na.rm = TRUE), 2))
+cat("\nC5 — overall experience with experimental brand relative to neutral, by arm:\n")
+print(round(tapply(num(d$c5_recoded), d$arm, mean, na.rm = TRUE), 2))
+cat("\n")
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 10. The mediation claim, descriptively
+# ─────────────────────────────────────────────────────────────────────────────
+# Coulter & Pinto (1995): irritation/anger, not felt guilt, mediates the
+# damage. At N=40 a formal mediation model is not credible, so this reports
+# the correlations the argument rests on and lets the write-up be honest.
+cat("── Irritation as the mediator (descriptive only) ───────\n")
+if (all(c("d_b2_irritation", "d_b4_trust") %in% names(d))) {
   paths <- list(
-    "anger diff  ~ brand attitude diff" = c("diff_anger", "diff_att_brand"),
-    "anger diff  ~ purchase intention diff" = c("diff_anger", "diff_pi"),
-    "guilt diff  ~ brand attitude diff" = c("diff_guilt", "diff_att_brand"),
-    "IMI diff    ~ brand attitude diff" = c("diff_imi", "diff_att_brand")
+    "irritation diff ~ trust diff"       = c("d_b2_irritation", "d_b4_trust"),
+    "irritation diff ~ manipulation diff" = c("d_b2_irritation", "d_b3_manipulation"),
+    "guilt diff      ~ trust diff"       = c("d_b1_guilt", "d_b4_trust"),
+    "manipulation diff ~ trust diff"     = c("d_b3_manipulation", "d_b4_trust")
   )
   for (nm in names(paths)) {
     v <- paths[[nm]]
@@ -338,14 +350,14 @@ if (all(c("diff_anger", "diff_att_brand", "diff_imi") %in% names(d))) {
     ok <- stats::complete.cases(d[, v])
     if (sum(ok) < 4) next
     r <- cor(d[[v[1]]][ok], d[[v[2]]][ok])
-    cat(sprintf("   %-40s r = %6.2f  (n=%d)\n", nm, r, sum(ok)))
+    cat(sprintf("   %-38s r = %6.2f  (n=%d)\n", nm, r, sum(ok)))
   }
   cat("\n   N=40 does not support a formal mediation model. Report these as\n")
   cat("   correlations consistent (or not) with Coulter & Pinto, not as a test.\n\n")
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 10. Save
+# 11. Save
 # ─────────────────────────────────────────────────────────────────────────────
 dir.create("analysis/output", showWarnings = FALSE, recursive = TRUE)
 write.csv(d, "analysis/output/scored.csv", row.names = FALSE)
@@ -353,6 +365,6 @@ if (!is.null(within_df))  write.csv(within_df,  "analysis/output/within_person.c
 if (!is.null(between_df)) write.csv(between_df, "analysis/output/between_arms.csv", row.names = FALSE)
 
 cat("── Written ─────────────────────────────────────────────\n")
-cat("  analysis/output/scored.csv        one row per participant, scored\n")
+cat("  analysis/output/scored.csv        one row per participant, plus difference columns\n")
 cat("  analysis/output/within_person.csv  experimental − neutral, per arm\n")
 cat("  analysis/output/between_arms.csv   pairwise Hedges' g with CIs\n\n")

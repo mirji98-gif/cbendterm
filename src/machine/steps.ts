@@ -4,12 +4,14 @@
  * There is exactly one transition table and no screen computes its own
  * successor. That is what makes the forced questionnaire order (PRD §2.2 /
  * non-negotiable 2) a structural property rather than a convention: to show
- * emotions after a manipulation item you would have to edit this table, not
+ * feelings after a manipulation item you would have to edit this table, not
  * merely make a mistake in a component.
+ *
+ * v2 (Instrument_v2.md) moves the awareness check to AFTER both blocks
+ * (never immediately after a pop-up) and adds a comparative block after it.
  */
 import type { Session, Step, BlockKey } from './types';
 import { blockAtPosition } from './types';
-import { SECTION_ORDER } from '../data/items';
 
 /** Linear successor for every step. Branching steps are handled below. */
 const NEXT: Record<Step, Step | null> = {
@@ -25,9 +27,12 @@ const NEXT: Record<Step, Step | null> = {
   product_2: 'popup_2',
   popup_2: 'continuation_2',
   continuation_2: 'block_2',
-  block_2: 'recognition',
-  recognition: 'open_ended',
-  open_ended: 'covariates',
+  // Awareness is reachable ONLY from here — never from block_1 — which is
+  // what makes "asked once per brand, after BOTH blocks" a structural
+  // property rather than a screen-ordering convention.
+  block_2: 'awareness',
+  awareness: 'comparative',
+  comparative: 'covariates',
   covariates: 'demographics',
   demographics: 'submitting',
   submitting: 'debrief', // failure branches to 'rescue' explicitly
@@ -46,13 +51,15 @@ const SHOPPING_STEPS: ReadonlySet<Step> = new Set<Step>([
   'store_2', 'product_2', 'popup_2', 'continuation_2',
 ]);
 
-/** Steps that are part of the instrument. */
-const QUESTIONNAIRE_STEPS: ReadonlySet<Step> = new Set<Step>([
-  'block_1', 'block_2', 'recognition', 'open_ended', 'covariates', 'demographics',
-]);
+/** Steps that are part of the instrument, in forced order. */
+export const QUESTIONNAIRE_STEPS: readonly Step[] = [
+  'block_1', 'block_2', 'awareness', 'comparative', 'covariates', 'demographics',
+];
+
+const QUESTIONNAIRE_STEP_SET: ReadonlySet<Step> = new Set(QUESTIONNAIRE_STEPS);
 
 export function isQuestionnaireStep(step: Step): boolean {
-  return QUESTIONNAIRE_STEPS.has(step);
+  return QUESTIONNAIRE_STEP_SET.has(step);
 }
 
 /**
@@ -92,25 +99,14 @@ export function positionForStep(step: Step): 1 | 2 | null {
 }
 
 /**
- * Progress through the questionnaire, 0..1. Counts questionnaire screens only,
- * so the denominator does not leak how much shopping is left.
+ * Progress through the questionnaire, 0..1. Each questionnaire step is a
+ * single screen in v2 (no sub-sections), so progress is just position in
+ * QUESTIONNAIRE_STEPS.
  */
-const QUESTIONNAIRE_SCREENS =
-  SECTION_ORDER.length * 2 + 4; // two blocks of sections, + recognition, open-ended, covariates, demographics
-
 export function progressFraction(session: Session): number {
-  const { step, sectionIndex } = session;
-  let done = 0;
-  switch (step) {
-    case 'block_1': done = sectionIndex; break;
-    case 'block_2': done = SECTION_ORDER.length + sectionIndex; break;
-    case 'recognition': done = SECTION_ORDER.length * 2; break;
-    case 'open_ended': done = SECTION_ORDER.length * 2 + 1; break;
-    case 'covariates': done = SECTION_ORDER.length * 2 + 2; break;
-    case 'demographics': done = SECTION_ORDER.length * 2 + 3; break;
-    default: return 0;
-  }
-  return Math.min(1, done / QUESTIONNAIRE_SCREENS);
+  const idx = QUESTIONNAIRE_STEPS.indexOf(session.step);
+  if (idx < 0) return 0;
+  return (idx + 1) / QUESTIONNAIRE_STEPS.length;
 }
 
 /**

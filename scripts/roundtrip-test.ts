@@ -176,9 +176,9 @@ async function main(): Promise<void> {
     }
     check('participant_id round-trips', dataRow[idx('participant_id')] === 'p-complete-001');
     check(
-      'open_ended survives comma + embedded quotes',
-      dataRow[idx('open_ended')] === s1.endMatter.openEnded,
-      `got: ${dataRow[idx('open_ended')]}`,
+      'c6_open survives comma + embedded quotes',
+      dataRow[idx('c6_open')] === s1.endMatter.c6Open,
+      `got: ${dataRow[idx('c6_open')]}`,
     );
     check(
       'event_log_json parses back to the same events',
@@ -197,8 +197,8 @@ async function main(): Promise<void> {
     );
     check('received_at written server-side', (dataRow[idx('received_at')] ?? '').length > 10);
     check(
-      'every reverse-coded column is present',
-      ['neutral_imi_6', 'exp_imi_6', 'neutral_attrib_3', 'exp_attrib_3'].every(
+      'diff scores and recoded comparative columns are present',
+      ['diff_b1_guilt', 'diff_b4_trust', 'c3_recoded', 'c5_recoded', 'aware_exp_correct'].every(
         (c) => idx(c) >= 0 && dataRow[idx(c)] !== '',
       ),
     );

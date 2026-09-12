@@ -2,7 +2,7 @@
  * Builds a plausible fake Session for round-trip testing, so the transport and
  * the sheet schema can be proven end-to-end before any UI exists.
  */
-import { BLOCK_ITEMS, type CutTier } from '../src/data/items';
+import { RATED_ITEMS } from '../src/data/items';
 import { DECLINE_COPY, type Arm, type BlockOrder, type BrandPairing } from '../src/data/conditions';
 import {
   blockAtPosition,
@@ -28,9 +28,11 @@ function fakeBlock(
 ): BlockData {
   const condition = key === 'neutral' ? 'neutral' : arm;
   const position = blockAtPosition(order, 1) === key ? 1 : 2;
-  const responses: Record<string, number | null> = {};
-  for (const item of BLOCK_ITEMS) {
-    responses[item.id] = complete ? Math.max(1, Math.min(7, Math.round(rnd(1, 7)))) : null;
+  const ratings: BlockData['ratings'] = {
+    b1_guilt: null, b2_irritation: null, b3_manipulation: null, b4_trust: null,
+  };
+  if (complete) {
+    for (const item of RATED_ITEMS) ratings[item.id] = Math.max(1, Math.min(7, Math.round(rnd(1, 7))));
   }
   return {
     key,
@@ -52,8 +54,9 @@ function fakeBlock(
     productViewed: complete ? 'bottle_tall' : null,
     timeOnStoreMs: complete ? Math.round(rnd(8000, 45000)) : null,
     timingInvalidated: false,
-    responses,
-    itemOrder: {},
+    ratings,
+    downstreamChoice: complete ? 'compare' : null,
+    openEnded: complete ? 'It felt a bit much, to be honest.' : '',
   };
 }
 
@@ -65,18 +68,15 @@ export function fakeSession(opts: {
   slot: number;
   complete: boolean;
   isDebug?: boolean;
-  cutTier?: CutTier;
 }): Session {
   const { participantId, arm, order, pairing, slot, complete } = opts;
   const now = new Date().toISOString();
   return {
-    schema: 1,
+    schema: 2,
     step: complete ? 'debrief' : 'block_1',
-    sectionIndex: 0,
     participantId,
     recruiterId: '2',
     isDebug: opts.isDebug ?? false,
-    cutTier: opts.cutTier ?? 0,
     assignment: { source: 'server', slot, arm, order, pairing },
     blocks: {
       neutral: fakeBlock('neutral', arm, order, pairing, complete),
@@ -84,12 +84,16 @@ export function fakeSession(opts: {
     },
     endMatter: complete
       ? {
-          recognitionNeutral: 'neutral',
-          recognitionExp: arm,
+          awareBrand1Raw: 'neutral',
+          awareBrand2Raw: arm,
+          c1Raw: 'aurevella',
+          c2Raw: 'veloure',
           // Deliberately contains a comma and a double quote, to prove CSV
           // quoting survives the whole round trip.
-          openEnded: 'The second one felt pushy, almost like it was saying "you\'re cheap".',
-          openEndedSkipped: false,
+          c3Raw: 3,
+          c4Raw: 'veloure',
+          c5Raw: 3,
+          c6Open: 'The second one felt pushy, almost like it was saying "you\'re cheap".',
           popupFreq: '4',
           dpAwareness: 'no',
           shoppingFreq: '3',
@@ -98,10 +102,14 @@ export function fakeSession(opts: {
           occupation: 'student',
         }
       : {
-          recognitionNeutral: null,
-          recognitionExp: null,
-          openEnded: '',
-          openEndedSkipped: false,
+          awareBrand1Raw: null,
+          awareBrand2Raw: null,
+          c1Raw: null,
+          c2Raw: null,
+          c3Raw: null,
+          c4Raw: null,
+          c5Raw: null,
+          c6Open: '',
           popupFreq: null,
           dpAwareness: null,
           shoppingFreq: null,

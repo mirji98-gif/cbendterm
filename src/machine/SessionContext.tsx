@@ -12,11 +12,12 @@ import { parseUrl, newParticipantId, type UrlConfig } from './urlParams';
 import { makeEvent, now, nowIso, ms } from '../instrumentation/clock';
 import { fetchAssignment, fallbackAssignment, postRow, submitWithRetry, beaconCheckpoint } from '../net/api';
 import { serializeSession } from '../net/serialize';
-import type { SectionId } from '../data/items';
+import type { RatedItemId, DownstreamChoice } from '../data/items';
 import type { Choice } from '../data/conditions';
 import type { Assignment, BlockData, BlockKey, EndMatter, Session, Step } from './types';
 
-const APP_VERSION = '1.0.0';
+/** Bumped alongside SCHEMA_VERSION for Instrument v2 — see codebook.md §9. */
+const APP_VERSION = '2.0.0';
 
 interface SessionApi {
   session: Session;
@@ -31,9 +32,9 @@ interface SessionApi {
   popupTelemetry: (block: BlockKey, patch: Partial<BlockData>) => void;
   popupResolved: (block: BlockKey, choice: Choice, latencyMs: number | null) => void;
   continuationDone: (block: BlockKey, dwellMs: number, autoAdvanced: boolean) => void;
-  setItemOrder: (block: BlockKey, section: SectionId, ids: string[]) => void;
-  answer: (block: BlockKey, itemId: string, value: number) => void;
-  sectionNext: () => void;
+  rate: (block: BlockKey, itemId: RatedItemId, value: number) => void;
+  setDownstreamChoice: (block: BlockKey, value: DownstreamChoice) => void;
+  setBlockOpenEnded: (block: BlockKey, value: string) => void;
   setEndMatter: (patch: Partial<EndMatter>) => void;
   submit: () => void;
   log: (type: string, payload?: Record<string, unknown>, block?: BlockKey) => void;
@@ -141,7 +142,7 @@ export function SessionProvider({ children }: { children: ReactNode }): JSX.Elem
   // one complete, block two complete.
   const checkpointed = useRef(new Set<Step>());
   useEffect(() => {
-    const CHECKPOINTS: Step[] = ['instructions', 'store_2', 'recognition'];
+    const CHECKPOINTS: Step[] = ['instructions', 'store_2', 'awareness'];
     if (!CHECKPOINTS.includes(session.step)) return;
     if (checkpointed.current.has(session.step)) return;
     checkpointed.current.add(session.step);
@@ -244,10 +245,14 @@ export function SessionProvider({ children }: { children: ReactNode }): JSX.Elem
           type: 'continuation_done', block, dwellMs, autoAdvanced,
           event: makeEvent('continuation_done', { dwell_ms: ms(dwellMs), auto: autoAdvanced }, block),
         }),
-      setItemOrder: (block, section, ids) => send({ type: 'item_order', block, section, ids }),
-      answer: (block, itemId, value) =>
-        send({ type: 'answer', block, itemId, value, event: makeEvent('answer', { item: itemId, value }, block) }),
-      sectionNext: () => send({ type: 'section_next', event: makeEvent('section_next') }),
+      rate: (block, itemId, value) =>
+        send({ type: 'rate', block, itemId, value, event: makeEvent('rate', { item: itemId, value }, block) }),
+      setDownstreamChoice: (block, value) =>
+        send({
+          type: 'downstream_choice', block, value,
+          event: makeEvent('downstream_choice', { value }, block),
+        }),
+      setBlockOpenEnded: (block, value) => send({ type: 'block_open_ended', block, value }),
       setEndMatter: (patch) =>
         send({ type: 'end_matter', patch, event: makeEvent('end_matter', { keys: Object.keys(patch) }) }),
       submit,
