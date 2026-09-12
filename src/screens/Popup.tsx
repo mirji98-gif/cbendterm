@@ -128,7 +128,12 @@ export function Popup({ blockKey, popup }: { blockKey: BlockKey; popup: PopupKey
           </svg>
         </button>
 
-        <p className="text-[13px] uppercase tracking-[0.14em] text-muted mb-2">
+        {/*
+          change_spec_v4_1_popup_copy.md: was tracked-out capitals, which reads
+          as template chrome rather than as a store. Sentence case at body size,
+          same treatment on both brands.
+        */}
+        <p className="text-[15px] text-muted mb-2">
           {brand.name}
         </p>
         <h2 id="offer-headline" className="text-[22px] font-semibold leading-tight mb-2 text-ink tracking-[-0.01em]">

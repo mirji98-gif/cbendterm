@@ -114,12 +114,25 @@ describe('pop-up 1 and pop-up 2', () => {
   it('differ from each other in headline/subcopy/accept label (they are different pop-ups)', () => {
     currentBlock = blockFor('neutral');
     const { getByText: getByText1 } = render(<Popup blockKey="neutral" popup="p1" />);
-    expect(getByText1('Get 15% off this order')).toBeTruthy();
+    expect(getByText1('Add your email, get 15% off this order')).toBeTruthy();
     cleanup();
     currentBlock = blockFor('neutral');
     const { getByText: getByText2 } = render(<Popup blockKey="neutral" popup="p2" />);
-    expect(getByText2('Get 15% off your next order')).toBeTruthy();
+    expect(getByText2('Follow us, get 15% off your next order')).toBeTruthy();
     cleanup();
+  });
+
+  // change_spec_v4_1_popup_copy.md: the ask has to be IN the headline, at
+  // headline weight — not in the grey subtext where a phone skimmer misses it.
+  it('states the ask in the headline element, not only in the subcopy', () => {
+    for (const [popup, ask] of [['p1', /add your email/i], ['p2', /follow us/i]] as const) {
+      currentBlock = blockFor('neutral');
+      const { container } = render(<Popup blockKey="neutral" popup={popup} />);
+      const headline = container.querySelector('#offer-headline')!;
+      expect(headline.textContent, `pop-up ${popup} headline must carry the ask`).toMatch(ask);
+      expect(headline.className).toContain('font-semibold');
+      cleanup();
+    }
   });
 
   it('actually render the assigned wording (the manipulation is present)', () => {

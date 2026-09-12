@@ -48,17 +48,26 @@ export const DECLINE_COPY: Record<PopupCondition, string> = {
  * props, so a per-arm override is not expressible. Both are worded to
  * describe collecting contact info, but neither pop-up actually renders an
  * input or stores anything typed — accepting just shows a confirmation.
+ *
+ * change_spec_v4_1_popup_copy.md: the ASK moved into the headline, at headline
+ * weight, alongside the reward. Previously the cost of accepting sat in grey
+ * subtext while the headline advertised only the discount, so a participant
+ * skimming on a phone could accept before registering that anything was being
+ * asked of them — which puts acceptance back at ceiling and leaves the decline
+ * wording nothing to act on. Both headlines are now give-this/get-that and
+ * structurally parallel; the only intended difference between the two pop-ups
+ * is the nature of the ask.
  */
 export const POPUP1_INVARIANT = {
-  headline: 'Get 15% off this order',
-  subcopy: "Add your email and we'll apply the discount at checkout.",
+  headline: 'Add your email, get 15% off this order',
+  subcopy: 'The discount applies at checkout.',
   acceptLabel: 'Yes, apply 15% off',
   closeAriaLabel: 'Close',
 } as const;
 
 export const POPUP2_INVARIANT = {
-  headline: 'Get 15% off your next order',
-  subcopy: "Follow us and we'll send the code to your feed.",
+  headline: 'Follow us, get 15% off your next order',
+  subcopy: 'We’ll send the code to your feed.',
   acceptLabel: 'Yes, follow and save',
   closeAriaLabel: 'Close',
 } as const;
